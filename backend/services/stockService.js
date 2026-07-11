@@ -43,8 +43,7 @@ export async function getStockData(company) {
       sector: quote.sector,
       industry: quote.industry,
     };
-  } catch (error) {
     console.error("Yahoo Finance Error:", error);
-    throw new Error("Unable to fetch stock data.");
+    throw new Error(`Unable to fetch stock data: ${error.message}`);
   }
 }
