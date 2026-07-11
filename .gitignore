@@ -1,0 +1,7 @@
+node_modules/
+.env
+dist/
+build/
+.DS_Store
+AI_Investment_Agent_Submission.zip
+chat_transcript.txt
