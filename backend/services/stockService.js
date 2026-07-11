@@ -1,14 +1,136 @@
 import YahooFinance from "yahoo-finance2";
 import axios from "axios";
 import { COMPANY_SYMBOLS } from "../utils/companySymbols.js";
+import { getAiModel } from "./aiService.js";
 
 const yahooFinance = new YahooFinance({
   suppressNotices: ["yahooSurvey"],
 });
 
-// Finnhub integration
+// Helper: Parse currency strings to float
+function parseCurrencyString(val) {
+  if (!val || val === "N/A" || val === "-") return null;
+  const cleaned = val.replace(/[$,₹\s,]/g, "");
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+// Helper: Parse market cap strings (e.g. 4.63T, 285.29B) to full numbers
+function parseMarketCap(val) {
+  if (!val || val === "N/A" || val === "-") return null;
+  const cleaned = val.replace(/[$,₹\s,]/g, "");
+  const multiplier = cleaned.slice(-1).toUpperCase();
+  const num = parseFloat(cleaned.slice(0, -1));
+  if (isNaN(num)) {
+    const rawNum = parseFloat(cleaned);
+    return isNaN(rawNum) ? null : rawNum;
+  }
+  if (multiplier === "T") return Math.round(num * 1000000000000);
+  if (multiplier === "B") return Math.round(num * 1000000000);
+  if (multiplier === "M") return Math.round(num * 1000000);
+  if (multiplier === "K") return Math.round(num * 1000);
+  
+  const rawNum = parseFloat(cleaned);
+  return isNaN(rawNum) ? null : rawNum;
+}
+
+// AI Symbol Resolver using Gemini
+async function resolveSymbolWithAI(company) {
+  try {
+    const model = getAiModel();
+    const prompt = `You are a financial stock symbol resolver. 
+Given a company name or query, return ONLY its Google Finance stock ticker in the format SYMBOL:EXCHANGE (e.g., Apple -> AAPL:NASDAQ, Infosys -> INFY:NSE, Cupid -> CUPID:NSE, Tesla -> TSLA:NASDAQ, Tata Motors -> TATAMOTORS:NSE, Nvidia -> NVDA:NASDAQ). 
+If the company trades on multiple exchanges, prioritize US exchanges (NASDAQ or NYSE) or Indian exchanges (NSE) if it's an Indian company. 
+Return ONLY the ticker string, nothing else. Do not include any markdown, spaces, or extra characters.
+
+Company name: "${company}"
+Ticker:`;
+
+    const response = await model.invoke(prompt);
+    const ticker = response.content.trim().toUpperCase();
+    console.log(`AI resolved "${company}" to Google Finance ticker: ${ticker}`);
+    return ticker;
+  } catch (error) {
+    console.error("AI symbol resolution error:", error.message);
+    return null;
+  }
+}
+
+// Google Finance scraper
+async function getGoogleFinanceData(company) {
+  // Step 1: Resolve symbol using AI
+  const ticker = await resolveSymbolWithAI(company);
+  if (!ticker || !ticker.includes(":")) {
+    throw new Error(`Could not resolve Google Finance ticker for "${company}"`);
+  }
+
+  // Step 2: Fetch HTML from Google Finance
+  console.log(`Fetching Google Finance HTML for ${ticker}...`);
+  const response = await fetch(`https://www.google.com/finance/quote/${ticker}`, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google Finance returned HTTP ${response.status}`);
+  }
+
+  const html = await response.text();
+
+  // 1. Company Name
+  const nameMatch = html.match(/<div class="gO24Ff">([^<]+)<\/div>/);
+  const companyName = nameMatch ? nameMatch[1] : company;
+
+  // 2. Current Price
+  const priceDivMatch = html.match(/<div[^>]*class="[^"]*N6SYTe[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+  let priceStr = null;
+  if (priceDivMatch) {
+    const valMatch = priceDivMatch[1].match(/\$?₹?([0-9,]+\.[0-9]+)/);
+    if (valMatch) priceStr = valMatch[1];
+  }
+  if (!priceStr) {
+    const valMatch = html.match(/jsname="Pdsbrc"[^>]*><span>([^<]+)<\/span>/);
+    if (valMatch) priceStr = valMatch[1];
+  }
+  const currentPrice = parseCurrencyString(priceStr);
+
+  // 3. Key Stats Table
+  const keyStatsRegex = /<div class="SwQK7">([^<]+)<\/div><div class="dO6ijd">([^<]+)<\/div>/g;
+  let match;
+  const stats = {};
+  while ((match = keyStatsRegex.exec(html)) !== null) {
+    stats[match[1]] = match[2];
+  }
+
+  // 4. Sector
+  const sectorMatch = html.match(/<span class="OspXqd">Sector<\/span><span class="oJCxTc">([^<]+)<\/span>/);
+  const sector = sectorMatch ? sectorMatch[1] : "Technology";
+
+  // Determine Currency based on ticker/exchange
+  const currency = ticker.endsWith("NSE") || ticker.endsWith("BOM") ? "INR" : "USD";
+  const exchange = ticker.split(":")[1] || "US";
+
+  return {
+    symbol: ticker.split(":")[0],
+    companyName: companyName,
+    currentPrice: currentPrice,
+    previousClose: parseCurrencyString(stats["Open"]), // Fallback to Open if Close not available
+    marketCap: parseMarketCap(stats["Mkt. cap"]),
+    currency: currency,
+    exchange: exchange,
+    fiftyTwoWeekHigh: parseCurrencyString(stats["52-wk high"]),
+    fiftyTwoWeekLow: parseCurrencyString(stats["52-wk low"]),
+    peRatio: parseCurrencyString(stats["P/E ratio"]),
+    eps: parseCurrencyString(stats["EPS"]),
+    sector: sector,
+    industry: sector, // Duplicate sector to industry for consistency
+    dataSource: "Google Finance"
+  };
+}
+
+// Finnhub integration (Optional fallback)
 async function getFinnhubData(company, apiKey) {
-  // Step 1: Search symbol
   const searchUrl = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(company)}&token=${apiKey}`;
   const searchRes = await axios.get(searchUrl);
   
@@ -16,10 +138,8 @@ async function getFinnhubData(company, apiKey) {
     throw new Error(`Symbol not found for company: ${company}`);
   }
   
-  // Pick the first result that matches (usually the best match)
   const symbol = searchRes.data.result[0].symbol;
   
-  // Step 2: Fetch Quote, Profile, and Metrics in parallel
   const [quoteRes, profileRes, metricRes] = await Promise.all([
     axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`),
     axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`),
@@ -57,11 +177,19 @@ export async function getStockData(company) {
       console.log(`Fetching live stock data for "${company}" using Finnhub...`);
       return await getFinnhubData(company, FINNHUB_API_KEY);
     } catch (error) {
-      console.error("Finnhub Error, trying Yahoo Finance fallback:", error.message);
+      console.error("Finnhub Error, trying Google Finance fallback:", error.message);
     }
   }
 
-  // 2. Try Yahoo Finance (works locally, but usually blocked on cloud environments like Render/AWS)
+  // 2. Try Google Finance (No Key, works in cloud environments like Render/AWS)
+  try {
+    console.log(`Fetching live stock data for "${company}" using Google Finance Scraper...`);
+    return await getGoogleFinanceData(company);
+  } catch (error) {
+    console.error("Google Finance Scraper Error, trying Yahoo Finance fallback:", error.message);
+  }
+
+  // 3. Try Yahoo Finance (works locally, but usually blocked on cloud environments like Render/AWS)
   try {
     console.log(`Fetching live stock data for "${company}" using Yahoo Finance...`);
     const searchResult = await yahooFinance.search(company);
@@ -95,7 +223,7 @@ export async function getStockData(company) {
   } catch (error) {
     console.error("Yahoo Finance Error, falling back to simulated data:", error.message);
     
-    // 3. Fallback: Generate realistic simulated data to keep app functional in production
+    // 4. Fallback: Generate realistic simulated data to keep app functional in production
     let symbol = "MOCK";
     const normalizedCompany = company.toLowerCase();
     for (const [name, sym] of Object.entries(COMPANY_SYMBOLS)) {
