@@ -13,6 +13,15 @@ app.use(express.json());
 
 app.use("/api/investment", investmentRoutes);
 
+app.get("/check-env", (req, res) => {
+  res.json({
+    hasGemini: !!process.env.GEMINI_API_KEY,
+    hasNews: !!process.env.NEWS_API_KEY,
+    hasFinnhub: !!process.env.FINNHUB_API_KEY,
+    finnhubValue: process.env.FINNHUB_API_KEY ? (process.env.FINNHUB_API_KEY.substring(0, 3) + "...") : "missing"
+  });
+});
+
 app.get("/test-yahoo", async (req, res) => {
   try {
     const response = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/AAPL");
