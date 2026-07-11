@@ -24,9 +24,18 @@ app.get("/check-env", (req, res) => {
 
 app.get("/test-yahoo", async (req, res) => {
   try {
-    const response = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/AAPL");
-    const data = await response.json();
-    res.json(data);
+    const response = await fetch("https://www.google.com/finance/quote/AAPL:NASDAQ", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+    const html = await response.text();
+    res.json({
+      status: response.status,
+      length: html.length,
+      isBlocked: html.includes("captcha") || html.includes("detected unusual traffic"),
+      snippet: html.substring(0, 1000)
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
