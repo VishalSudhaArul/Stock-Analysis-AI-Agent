@@ -370,3 +370,127 @@ h1, h2, h3, h4, h5, h6 {
   margin-right: 8px;
   margin-bottom: 8px;
 }
+
+/* Chart Styles */
+.chart-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 15px;
+}
+
+.chart-price-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 5px;
+}
+
+.chart-current-price {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.chart-price-diff {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.diff-up {
+  color: var(--positive);
+}
+
+.diff-down {
+  color: var(--negative);
+}
+
+.timeframe-buttons {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+}
+
+.time-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.time-btn:hover {
+  color: var(--text-heading);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.time-btn.active {
+  color: white;
+  background: var(--accent-primary);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.chart-svg-container {
+  width: 100%;
+  height: 280px;
+  margin-top: 10px;
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+}
+
+/* Quick Search Suggestions */
+.quick-search-tags {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: -35px;
+  margin-bottom: 50px;
+  animation: fadeInDown 0.8s ease-out;
+  flex-wrap: wrap;
+}
+
+.quick-search-tags span {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.quick-search-tag {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--card-border);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quick-search-tag:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60A5FA;
+  transform: translateY(-1px);
+}
+
+.quick-search-tag:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

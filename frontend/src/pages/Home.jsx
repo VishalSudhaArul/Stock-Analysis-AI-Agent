@@ -7,6 +7,7 @@ import RiskCard from "../components/RiskCard";
 import OpportunityCard from "../components/OpportunityCard";
 import LoadingSpinner from "../components/LoadingSpinner";
 import StockCard from "../components/StockCard";
+import StockChart from "../components/StockChart";
 import { analyzeCompany } from "../services/api";
 import NewsCard from "../components/NewsCard";
 
@@ -40,6 +41,20 @@ function Home() {
         loading={loading}
       />
 
+      <div className="quick-search-tags">
+        <span>Try:</span>
+        {["Apple", "Tesla", "Nvidia", "Infosys", "Microsoft"].map((item) => (
+          <button
+            key={item}
+            onClick={() => handleSearch(item)}
+            disabled={loading}
+            className="quick-search-tag"
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+
       {loading && <LoadingSpinner />}
 
       {result && (
@@ -52,6 +67,13 @@ function Home() {
           <CompanyCard data={result.analysis} />
 
           <StockCard stock={result.marketData} />
+
+          {result.marketData && result.marketData.historical && (
+            <StockChart
+              historicalData={result.marketData.historical}
+              currency={result.marketData.currency}
+            />
+          )}
 
           <StrengthCard
             strengths={result.analysis.strengths}

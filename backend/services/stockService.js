@@ -168,91 +168,157 @@ async function getFinnhubData(company, apiKey) {
   };
 }
 
+async function getHistoricalPriceData(symbol, currentPrice) {
+  try {
+    console.log(`Fetching historical price data for ${symbol}...`);
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    const result = await yahooFinance.historical(symbol, {
+      period1: thirtyDaysAgo.toISOString().split('T')[0],
+      period2: today.toISOString().split('T')[0],
+      interval: "1d",
+    });
+    
+    if (result && result.length > 0) {
+      return result.map(item => ({
+        date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        price: parseFloat((item.close || item.adjClose || currentPrice).toFixed(2))
+      }));
+    }
+  } catch (error) {
+    console.warn(`Yahoo Finance historical error for ${symbol}, falling back to simulated history:`, error.message);
+  }
+  
+  // Simulated fallback: Generate 30 trading days of random walk ending at currentPrice
+  const mockHistory = [];
+  let price = currentPrice || 100;
+  const today = new Date();
+  
+  // Generate backwards from today
+  for (let i = 0; i < 30; i++) {
+    const date = new Date();
+    date.setDate(today.getDate() - i);
+    const day = date.getDay();
+    if (day === 0 || day === 6) {
+      continue; // Skip weekends
+    }
+    
+    mockHistory.unshift({
+      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      price: parseFloat(price.toFixed(2))
+    });
+    
+    // Walk price backward
+    const change = (Math.random() - 0.48) * 0.02; // small random walk
+    price = price * (1 - change);
+  }
+  
+  return mockHistory;
+}
+
 export async function getStockData(company) {
   const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
+  let stockData = null;
 
   // 1. Try Finnhub if API key is provided
   if (FINNHUB_API_KEY) {
     try {
       console.log(`Fetching live stock data for "${company}" using Finnhub...`);
-      return await getFinnhubData(company, FINNHUB_API_KEY);
+      stockData = await getFinnhubData(company, FINNHUB_API_KEY);
     } catch (error) {
       console.error("Finnhub Error, trying Google Finance fallback:", error.message);
     }
   }
 
   // 2. Try Google Finance (No Key, works in cloud environments like Render/AWS)
-  try {
-    console.log(`Fetching live stock data for "${company}" using Google Finance Scraper...`);
-    return await getGoogleFinanceData(company);
-  } catch (error) {
-    console.error("Google Finance Scraper Error, trying Yahoo Finance fallback:", error.message);
+  if (!stockData) {
+    try {
+      console.log(`Fetching live stock data for "${company}" using Google Finance Scraper...`);
+      stockData = await getGoogleFinanceData(company);
+    } catch (error) {
+      console.error("Google Finance Scraper Error, trying Yahoo Finance fallback:", error.message);
+    }
   }
 
   // 3. Try Yahoo Finance (works locally, but usually blocked on cloud environments like Render/AWS)
-  try {
-    console.log(`Fetching live stock data for "${company}" using Yahoo Finance...`);
-    const searchResult = await yahooFinance.search(company);
+  if (!stockData) {
+    try {
+      console.log(`Fetching live stock data for "${company}" using Yahoo Finance...`);
+      const searchResult = await yahooFinance.search(company);
 
-    if (searchResult.quotes && searchResult.quotes.length > 0) {
-      const stock = searchResult.quotes.find(
-        (q) => q.symbol && q.quoteType === "EQUITY"
-      );
+      if (searchResult.quotes && searchResult.quotes.length > 0) {
+        const stock = searchResult.quotes.find(
+          (q) => q.symbol && q.quoteType === "EQUITY"
+        );
 
-      if (stock) {
-        const quote = await yahooFinance.quote(stock.symbol);
-        return {
-          symbol: quote.symbol,
-          companyName: quote.longName,
-          currentPrice: quote.regularMarketPrice,
-          previousClose: quote.regularMarketPreviousClose,
-          marketCap: quote.marketCap,
-          currency: quote.currency,
-          exchange: quote.fullExchangeName,
-          fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
-          fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
-          peRatio: quote.trailingPE,
-          eps: quote.epsTrailingTwelveMonths,
-          sector: quote.sector,
-          industry: quote.industry,
-          dataSource: "Yahoo Finance"
-        };
+        if (stock) {
+          const quote = await yahooFinance.quote(stock.symbol);
+          stockData = {
+            symbol: quote.symbol,
+            companyName: quote.longName,
+            currentPrice: quote.regularMarketPrice,
+            previousClose: quote.regularMarketPreviousClose,
+            marketCap: quote.marketCap,
+            currency: quote.currency,
+            exchange: quote.fullExchangeName,
+            fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+            fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
+            peRatio: quote.trailingPE,
+            eps: quote.epsTrailingTwelveMonths,
+            sector: quote.sector,
+            industry: quote.industry,
+            dataSource: "Yahoo Finance"
+          };
+        }
       }
-    }
-    throw new Error("No matching equity symbol found.");
-  } catch (error) {
-    console.error("Yahoo Finance Error, falling back to simulated data:", error.message);
-    
-    // 4. Fallback: Generate realistic simulated data to keep app functional in production
-    let symbol = "MOCK";
-    const normalizedCompany = company.toLowerCase();
-    for (const [name, sym] of Object.entries(COMPANY_SYMBOLS)) {
-      if (normalizedCompany.includes(name.toLowerCase())) {
-        symbol = sym;
-        break;
+      if (!stockData) throw new Error("No matching equity symbol found.");
+    } catch (error) {
+      console.error("Yahoo Finance Error, falling back to simulated data:", error.message);
+      
+      // 4. Fallback: Generate realistic simulated data to keep app functional in production
+      let symbol = "MOCK";
+      const normalizedCompany = company.toLowerCase();
+      for (const [name, sym] of Object.entries(COMPANY_SYMBOLS)) {
+        if (normalizedCompany.includes(name.toLowerCase())) {
+          symbol = sym;
+          break;
+        }
       }
-    }
-    if (symbol === "MOCK") {
-      symbol = company.substring(0, 4).toUpperCase();
-    }
+      if (symbol === "MOCK") {
+        symbol = company.substring(0, 4).toUpperCase();
+      }
 
-    const mockPrice = 120 + Math.random() * 80;
-    return {
-      symbol: symbol,
-      companyName: company.charAt(0).toUpperCase() + company.slice(1) + " Inc. (Simulated)",
-      currentPrice: parseFloat(mockPrice.toFixed(2)),
-      previousClose: parseFloat((mockPrice * (0.98 + Math.random() * 0.04)).toFixed(2)),
-      marketCap: Math.floor(100000000000 + Math.random() * 2000000000000),
-      currency: "USD",
-      exchange: "NASDAQ",
-      fiftyTwoWeekHigh: parseFloat((mockPrice * 1.25).toFixed(2)),
-      fiftyTwoWeekLow: parseFloat((mockPrice * 0.85).toFixed(2)),
-      peRatio: parseFloat((20 + Math.random() * 15).toFixed(1)),
-      eps: parseFloat((2 + Math.random() * 8).toFixed(2)),
-      sector: "Technology",
-      industry: "Software & Services",
-      isSimulated: true,
-      dataSource: "Simulated Data Fallback"
-    };
+      const mockPrice = 120 + Math.random() * 80;
+      stockData = {
+        symbol: symbol,
+        companyName: company.charAt(0).toUpperCase() + company.slice(1) + " Inc. (Simulated)",
+        currentPrice: parseFloat(mockPrice.toFixed(2)),
+        previousClose: parseFloat((mockPrice * (0.98 + Math.random() * 0.04)).toFixed(2)),
+        marketCap: Math.floor(100000000000 + Math.random() * 2000000000000),
+        currency: "USD",
+        exchange: "NASDAQ",
+        fiftyTwoWeekHigh: parseFloat((mockPrice * 1.25).toFixed(2)),
+        fiftyTwoWeekLow: parseFloat((mockPrice * 0.85).toFixed(2)),
+        peRatio: parseFloat((20 + Math.random() * 15).toFixed(1)),
+        eps: parseFloat((2 + Math.random() * 8).toFixed(2)),
+        sector: "Technology",
+        industry: "Software & Services",
+        isSimulated: true,
+        dataSource: "Simulated Data Fallback"
+      };
+    }
   }
+
+  // Inject historical data if we got stockData
+  if (stockData) {
+    try {
+      stockData.historical = await getHistoricalPriceData(stockData.symbol, stockData.currentPrice);
+    } catch (histErr) {
+      console.error("Failed to append historical data:", histErr.message);
+    }
+  }
+
+  return stockData;
 }
