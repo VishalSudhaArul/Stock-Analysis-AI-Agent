@@ -1,4 +1,4 @@
-function RecommendationCard({ recommendation, confidence }) {
+function RecommendationCard({ recommendation, confidence, isWatched, onToggleWatchlist }) {
   const recLower = recommendation.toLowerCase();
   let colorClass = "rec-buy";
   let barColor = "#10B981"; // emerald
@@ -36,6 +36,17 @@ function RecommendationCard({ recommendation, confidence }) {
             }} />
           </div>
         </div>
+
+        {onToggleWatchlist && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+            <button 
+              className={`add-watchlist-btn ${isWatched ? 'active' : ''}`}
+              onClick={onToggleWatchlist}
+            >
+              {isWatched ? '★ Saved to Watchlist' : '☆ Add to Watchlist'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

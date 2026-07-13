@@ -10,15 +10,16 @@ export async function analyzeInvestment(company) {
     // 2. Fetch latest news
     const latestNews = await getCompanyNews(company);
 
-    // 3. AI analyzes using live data
-    const analysis = await analyzeCompany(
+    const result = await analyzeCompany(
       company,
       stockData,
       latestNews
     );
 
     return {
-      analysis,
+      analysis: result.analysis,
+      marketAnalysis: result.marketAnalysis,
+      sentimentAnalysis: result.sentimentAnalysis,
       marketData: stockData,
       latestNews,
     };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SearchBar from "../components/SearchBar";
 import CompanyCard from "../components/CompanyCard";
 import RecommendationCard from "../components/RecommendationCard";
@@ -10,10 +10,37 @@ import StockCard from "../components/StockCard";
 import StockChart from "../components/StockChart";
 import { analyzeCompany } from "../services/api";
 import NewsCard from "../components/NewsCard";
+import SubAgentInsights from "../components/SubAgentInsights";
+import CompareMatrix from "../components/CompareMatrix";
+import Watchlist from "../components/Watchlist";
 
 function Home() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
+  const [watchlist, setWatchlist] = useState(() => {
+    try {
+      const stored = localStorage.getItem("watchlist");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Apply Theme Mode class to body
+  useEffect(() => {
+    if (theme === "light") {
+      document.body.classList.add("light-theme");
+    } else {
+      document.body.classList.remove("light-theme");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  // Persist Watchlist
+  useEffect(() => {
+    localStorage.setItem("watchlist", JSON.stringify(watchlist));
+  }, [watchlist]);
 
   const handleSearch = async (company) => {
     try {
@@ -32,8 +59,76 @@ function Home() {
     }
   };
 
+  const handleToggleWatchlist = () => {
+    if (!result) return;
+    const symbol = result.marketData.symbol;
+    const isAlreadyWatched = watchlist.some((item) => item.symbol === symbol);
+
+    if (isAlreadyWatched) {
+      setWatchlist((prev) => prev.filter((item) => item.symbol !== symbol));
+    } else {
+      const newItem = {
+        symbol: result.marketData.symbol,
+        companyName: result.analysis.company,
+        recommendation: result.analysis.recommendation,
+        confidence: result.analysis.confidence,
+        price: result.marketData.currentPrice,
+        currency: result.marketData.currency,
+        addedAt: new Date().toISOString(),
+        fullData: result, // Cache full payload for comparison matrix
+      };
+      setWatchlist((prev) => [...prev, newItem]);
+    }
+  };
+
+  const handleRemoveFromWatchlist = (symbol) => {
+    setWatchlist((prev) => prev.filter((item) => item.symbol !== symbol));
+  };
+
+  const handleCompareSelect = async (companyName) => {
+    try {
+      setLoading(true);
+      const response = await analyzeCompany(companyName);
+      if (response.success) {
+        // Update comparison cache in watchlist
+        setWatchlist((prev) =>
+          prev.map((item) =>
+            item.symbol === response.data.marketData.symbol
+              ? { ...item, price: response.data.marketData.currentPrice, fullData: response.data }
+              : item
+          )
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to analyze stock for comparison.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+  };
+
   return (
     <div className="container">
+      {/* Floating Toolbar */}
+      <div className="floating-actions">
+        <button className="action-btn" onClick={toggleTheme} title="Toggle Color Theme">
+          {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
+        </button>
+        {result && (
+          <button className="action-btn" onClick={handleExportPDF} title="Download Report as PDF">
+            📄 Export PDF Report
+          </button>
+        )}
+      </div>
+
       <h1 className="page-title">AI Investment Agent</h1>
 
       <SearchBar
@@ -62,6 +157,14 @@ function Home() {
           <RecommendationCard
             recommendation={result.analysis.recommendation}
             confidence={result.analysis.confidence}
+            isWatched={watchlist.some((item) => item.symbol === result.marketData?.symbol)}
+            onToggleWatchlist={handleToggleWatchlist}
+          />
+
+          {/* Sub-Agent Insights (Market Analyst + Sentiment Analyst) */}
+          <SubAgentInsights
+            marketAnalysis={result.marketAnalysis}
+            sentimentAnalysis={result.sentimentAnalysis}
           />
 
           <CompanyCard data={result.analysis} />
@@ -109,9 +212,23 @@ function Home() {
             </p>
           </div>
 
+          {/* Stock Comparison Matrix */}
+          <CompareMatrix
+            currentResult={result}
+            watchlist={watchlist}
+            onCompareSelect={handleCompareSelect}
+          />
+
           <NewsCard news={result.latestNews} />
         </div>
       )}
+
+      {/* Watchlist Section */}
+      <Watchlist
+        watchlist={watchlist}
+        onAnalyze={handleSearch}
+        onRemove={handleRemoveFromWatchlist}
+      />
     </div>
   );
 }

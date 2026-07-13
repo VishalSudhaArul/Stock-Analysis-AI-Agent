@@ -1,9 +1,22 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { getAiModel } from "../services/aiService.js";
 import { z } from "zod";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
 
-// 1. Define the desired structured output using Zod
+// 1. Define the desired structured output schemas using Zod
+const marketAnalysisSchema = z.object({
+  financialScore: z.number().min(0).max(100).describe("Quantitative score representing financial health, valuation, and performance metrics (0-100)"),
+  summary: z.string().describe("Executive summary of financial metrics and valuation analysis"),
+  valuationStance: z.enum(["UNDERVALUED", "FAIRLY_VALUED", "OVERVALUED"]).describe("Valuation assessment"),
+  keyMetricsEvaluated: z.array(z.string()).describe("List of key financial metrics evaluated and their status"),
+});
+
+const sentimentAnalysisSchema = z.object({
+  sentimentScore: z.number().min(0).max(100).describe("Sentiment score where 0 is extremely negative, 50 is neutral, and 100 is extremely positive"),
+  summary: z.string().describe("Executive summary of the news sentiment and public image"),
+  sentimentStance: z.enum(["BULLISH", "NEUTRAL", "BEARISH"]).describe("News-based sentiment stance"),
+  keyNewsThemes: z.array(z.string()).describe("Key themes or recurring topics found in the news headlines"),
+});
+
 const investmentSchema = z.object({
   company: z.string().describe("The full name of the company"),
   symbol: z.string().describe("The official stock ticker symbol"),
@@ -29,56 +42,101 @@ const agentState = {
   news: {
     value: null,
   },
+  marketAnalysis: {
+    value: null,
+  },
+  sentimentAnalysis: {
+    value: null,
+  },
   analysis: {
     value: null,
   },
 };
 
-// 3. Define the Prompt Template
-const promptTemplate = ChatPromptTemplate.fromMessages([
-  ["system", "You are an elite Senior Investment Analyst. Your job is to analyze a company and provide a structured investment recommendation based on live market data and news."],
-  ["human", "Please analyze {company}.\n\nLive Stock Data:\n{stockData}\n\nLatest News:\n{news}\n\nUse this data to give a highly accurate recommendation."]
-]);
-
-// 4. Define Graph Nodes
-async function analyzeNode(state) {
-  console.log(`[LangGraph Node] Analyzing company: ${state.company}`);
-  
+// 3. Define Graph Nodes
+async function marketAnalystNode(state) {
+  console.log(`[LangGraph Node] Market Analyst analyzing: ${state.company}`);
   const model = getAiModel();
+  const structuredModel = model.withStructuredOutput(marketAnalysisSchema);
   
-  // Bind the schema to force the model to return structured JSON
-  const structuredModel = model.withStructuredOutput(investmentSchema);
-  
-  const prompt = await promptTemplate.format({
-    company: state.company,
-    stockData: JSON.stringify(state.stockData, null, 2),
-    news: JSON.stringify(state.news, null, 2),
-  });
+  const prompt = `You are a Senior Quantitative Financial Analyst. 
+Analyze the financial health, key metrics, and valuation of "${state.company}" based on the following live stock data:
+${JSON.stringify(state.stockData, null, 2)}
+
+Provide a structured valuation, quantitative financial health score, and key observations.`;
 
   const response = await structuredModel.invoke(prompt);
+  return { marketAnalysis: response };
+}
+
+async function sentimentAnalystNode(state) {
+  console.log(`[LangGraph Node] Sentiment Analyst analyzing: ${state.company}`);
+  const model = getAiModel();
+  const structuredModel = model.withStructuredOutput(sentimentAnalysisSchema);
   
+  const prompt = `You are a Senior Market Sentiment & News Analyst. 
+Analyze the public sentiment, brand perception, and recent news trends of "${state.company}" based on these news articles:
+${JSON.stringify(state.news, null, 2)}
+
+Provide a structured market sentiment outlook, sentiment score, and key topics discussed.`;
+
+  const response = await structuredModel.invoke(prompt);
+  return { sentimentAnalysis: response };
+}
+
+async function investmentDecisionNode(state) {
+  console.log(`[LangGraph Node] Chief Investment Officer synthesizing final decision for: ${state.company}`);
+  const model = getAiModel();
+  const structuredModel = model.withStructuredOutput(investmentSchema);
+  
+  const prompt = `You are the Chief Investment Officer (CIO) of a major investment fund. 
+Synthesize the findings of your Market Analyst and Sentiment Analyst to produce the final investment decision for "${state.company}".
+
+Market Analyst Report:
+${JSON.stringify(state.marketAnalysis, null, 2)}
+
+Sentiment Analyst Report:
+${JSON.stringify(state.sentimentAnalysis, null, 2)}
+
+Live Stock Data:
+${JSON.stringify(state.stockData, null, 2)}
+
+Latest News:
+${JSON.stringify(state.news, null, 2)}
+
+Synthesize a comprehensive, high-quality, professional investment report and final recommendation (BUY/HOLD/SELL).`;
+
+  const response = await structuredModel.invoke(prompt);
   return { analysis: response };
 }
 
-// 5. Build and Compile the LangGraph
+// 4. Build and Compile the LangGraph (Sequential Pipeline)
 const workflow = new StateGraph({ channels: agentState })
-  .addNode("analyze", analyzeNode)
-  .addEdge(START, "analyze")
-  .addEdge("analyze", END);
+  .addNode("marketAnalyst", marketAnalystNode)
+  .addNode("sentimentAnalyst", sentimentAnalystNode)
+  .addNode("cio", investmentDecisionNode)
+  .addEdge(START, "marketAnalyst")
+  .addEdge("marketAnalyst", "sentimentAnalyst")
+  .addEdge("sentimentAnalyst", "cio")
+  .addEdge("cio", END);
 
 const app = workflow.compile();
 
-// 6. Main Export Function
+// 5. Main Export Function
 export async function analyzeCompany(company, stockData, news) {
   try {
-    console.log(`[LangGraph] Starting execution for ${company}`);
+    console.log(`[LangGraph] Starting multi-agent execution for ${company}`);
     const finalState = await app.invoke({
       company,
       stockData,
       news
     });
     
-    return finalState.analysis;
+    return {
+      analysis: finalState.analysis,
+      marketAnalysis: finalState.marketAnalysis,
+      sentimentAnalysis: finalState.sentimentAnalysis,
+    };
   } catch (error) {
     console.error("Investment Agent Error (LangGraph):", error);
     throw new Error("LangGraph Error: " + error.message);
