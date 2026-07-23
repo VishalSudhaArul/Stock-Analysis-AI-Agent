@@ -52,11 +52,11 @@ model Transaction {
 
 model SavedReport {
   id           String   @id @default(uuid())
-  userId       String
+  userId       String?
   symbol       String
   companyName  String
   analysisData String   // JSON string of analysis report
   shareId      String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
 }

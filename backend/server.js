@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 
 import investmentRoutes from "./routes/investment.js";
 import authRoutes from "./routes/auth.js";
+import reportRoutes from "./routes/report.js";
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 
 app.use("/api/investment", investmentRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/reports", reportRoutes);
 
 app.get("/", (req, res) => {
   res.json({
