@@ -17,30 +17,39 @@ export async function analyzeInvestment(company) {
     // 2. Fetch latest news
     const latestNews = await getCompanyNews(company);
 
-    // 3. Check for cached AI analysis report from the last 24 hours
-    const cacheDuration = 24 * 60 * 60 * 1000; // 24 hours
-    const cachedReport = await prisma.savedReport.findFirst({
-      where: {
-        symbol: stockData.symbol,
-        createdAt: {
-          gte: new Date(Date.now() - cacheDuration),
+    // 3. Resilient Database Cache Check
+    let cachedReport = null;
+    try {
+      const cacheDuration = 24 * 60 * 60 * 1000; // 24 hours
+      cachedReport = await prisma.savedReport.findFirst({
+        where: {
+          symbol: stockData.symbol,
+          createdAt: {
+            gte: new Date(Date.now() - cacheDuration),
+          },
         },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+    } catch (dbErr) {
+      console.warn("[Prisma Warning] Could not query savedReport cache:", dbErr.message);
+    }
 
     if (cachedReport) {
-      console.log(`[Cache Hit] Serving cached AI analysis for ${stockData.symbol}`);
-      const cachedAnalysis = JSON.parse(cachedReport.analysisData);
-      return {
-        analysis: cachedAnalysis.analysis,
-        marketAnalysis: cachedAnalysis.marketAnalysis,
-        sentimentAnalysis: cachedAnalysis.sentimentAnalysis,
-        marketData: stockData,
-        latestNews,
-      };
+      try {
+        console.log(`[Cache Hit] Serving cached AI analysis for ${stockData.symbol}`);
+        const cachedAnalysis = JSON.parse(cachedReport.analysisData);
+        return {
+          analysis: cachedAnalysis.analysis,
+          marketAnalysis: cachedAnalysis.marketAnalysis,
+          sentimentAnalysis: cachedAnalysis.sentimentAnalysis,
+          marketData: stockData,
+          latestNews,
+        };
+      } catch (parseErr) {
+        console.warn("[Cache Warning] Corrupted cache JSON, proceeding to fresh AI analysis:", parseErr.message);
+      }
     }
 
     // 4. Cache Miss: Run the LangGraph agent for deep analysis
@@ -57,16 +66,20 @@ export async function analyzeInvestment(company) {
       sentimentAnalysis: agentResult.sentimentAnalysis,
     };
 
-    // 5. Save the report to the database for future cache hits
-    const shareId = crypto.randomBytes(8).toString("hex");
-    await prisma.savedReport.create({
-      data: {
-        symbol: stockData.symbol,
-        companyName: stockData.companyName,
-        analysisData: JSON.stringify(analysisPayload),
-        shareId,
-      },
-    });
+    // 5. Save the report to the database for future cache hits (Resilient)
+    try {
+      const shareId = crypto.randomBytes(8).toString("hex");
+      await prisma.savedReport.create({
+        data: {
+          symbol: stockData.symbol,
+          companyName: stockData.companyName || stockData.symbol,
+          analysisData: JSON.stringify(analysisPayload),
+          shareId,
+        },
+      });
+    } catch (saveErr) {
+      console.warn("[Prisma Warning] Could not persist savedReport to database:", saveErr.message);
+    }
 
     return {
       ...analysisPayload,

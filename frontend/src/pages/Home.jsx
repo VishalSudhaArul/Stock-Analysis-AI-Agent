@@ -94,7 +94,8 @@ function Home() {
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to analyze company.");
+      const errMsg = err.response?.data?.error || err.message || "Failed to analyze company.";
+      alert(`Analysis Error: ${errMsg}`);
     } finally {
       setLoading(false);
     }
