@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import prisma from "../utils/prisma.js";
 
+const JWT_SECRET = process.env.JWT_SECRET || "saas_ai_investment_secret_key_2026_fallback";
+
 export async function signup(req, res) {
   try {
     const { email, password } = req.body;
@@ -9,6 +11,7 @@ export async function signup(req, res) {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
+        error: "Email and password are required",
         message: "Email and password are required",
       });
     }
@@ -16,6 +19,7 @@ export async function signup(req, res) {
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
+        error: "Password must be at least 6 characters long",
         message: "Password must be at least 6 characters long",
       });
     }
@@ -28,6 +32,7 @@ export async function signup(req, res) {
     if (existingUser) {
       return res.status(400).json({
         success: false,
+        error: "User with this email already exists",
         message: "User with this email already exists",
       });
     }
@@ -59,7 +64,7 @@ export async function signup(req, res) {
     // Generate token
     const token = jwt.sign(
       { userId: result.user.id, email: result.user.email },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: "7d" }
     );
 
@@ -75,7 +80,8 @@ export async function signup(req, res) {
     console.error("Signup Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error during registration",
+      error: error.message || "Internal server error during registration",
+      message: error.message || "Internal server error during registration",
     });
   }
 }
@@ -87,6 +93,7 @@ export async function login(req, res) {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
+        error: "Email and password are required",
         message: "Email and password are required",
       });
     }
@@ -99,6 +106,7 @@ export async function login(req, res) {
     if (!user) {
       return res.status(401).json({
         success: false,
+        error: "Invalid email or password",
         message: "Invalid email or password",
       });
     }
@@ -108,6 +116,7 @@ export async function login(req, res) {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
+        error: "Invalid email or password",
         message: "Invalid email or password",
       });
     }
@@ -115,7 +124,7 @@ export async function login(req, res) {
     // Generate token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: "7d" }
     );
 
@@ -131,7 +140,8 @@ export async function login(req, res) {
     console.error("Login Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error during login",
+      error: error.message || "Internal server error during login",
+      message: error.message || "Internal server error during login",
     });
   }
 }
@@ -150,6 +160,7 @@ export async function me(req, res) {
     if (!user) {
       return res.status(404).json({
         success: false,
+        error: "User not found",
         message: "User not found",
       });
     }
@@ -162,7 +173,8 @@ export async function me(req, res) {
     console.error("Get User Profile Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error fetching user profile",
+      error: error.message || "Internal server error fetching user profile",
+      message: error.message || "Internal server error fetching user profile",
     });
   }
 }

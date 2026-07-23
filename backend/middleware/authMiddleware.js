@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 
+const JWT_SECRET = process.env.JWT_SECRET || "saas_ai_investment_secret_key_2026_fallback";
+
 export default function authMiddleware(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -11,7 +13,7 @@ export default function authMiddleware(req, res, next) {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     req.user = {
       userId: decoded.userId,
