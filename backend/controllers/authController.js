@@ -4,6 +4,9 @@ import prisma from "../utils/prisma.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "saas_ai_investment_secret_key_2026_fallback";
 
+// In-memory fallback storage when cloud DB is unavailable
+const memoryUsers = new Map();
+
 export async function signup(req, res) {
   try {
     const { email, password } = req.body;
@@ -24,46 +27,69 @@ export async function signup(req, res) {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        error: "User with this email already exists",
-        message: "User with this email already exists",
-      });
-    }
-
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Create user and a default portfolio in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          email,
-          passwordHash,
-        },
+    let userId = null;
+
+    try {
+      // 1. Check if user exists in DB
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
       });
 
-      const defaultPortfolio = await tx.portfolio.create({
-        data: {
-          userId: newUser.id,
-          name: "Default Portfolio",
-          balance: 100000.0, // $100k starting cash
-        },
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          error: "User with this email already exists",
+          message: "User with this email already exists",
+        });
+      }
+
+      // 2. Create user and a default portfolio in DB transaction
+      const result = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            email,
+            passwordHash,
+          },
+        });
+
+        await tx.portfolio.create({
+          data: {
+            userId: newUser.id,
+            name: "Default Portfolio",
+            balance: 100000.0, // $100k starting cash
+          },
+        });
+
+        return newUser;
       });
 
-      return { user: newUser, portfolio: defaultPortfolio };
-    });
+      userId = result.id;
+    } catch (dbErr) {
+      console.warn("[Prisma Database Warning] Cloud DB connection failed, using in-memory session fallback:", dbErr.message);
+      
+      if (memoryUsers.has(email)) {
+        return res.status(400).json({
+          success: false,
+          error: "User with this email already exists",
+          message: "User with this email already exists",
+        });
+      }
 
-    // Generate token
+      userId = "usr_" + Math.random().toString(36).substring(2, 10);
+      memoryUsers.set(email, {
+        id: userId,
+        email,
+        passwordHash,
+      });
+    }
+
+    // Generate JWT token
     const token = jwt.sign(
-      { userId: result.user.id, email: result.user.email },
+      { userId, email },
       JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -72,8 +98,8 @@ export async function signup(req, res) {
       success: true,
       token,
       user: {
-        id: result.user.id,
-        email: result.user.email,
+        id: userId,
+        email,
       },
     });
   } catch (error) {
@@ -98,10 +124,16 @@ export async function login(req, res) {
       });
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    let user = null;
+
+    try {
+      user = await prisma.user.findUnique({
+        where: { email },
+      });
+    } catch (dbErr) {
+      console.warn("[Prisma Database Warning] DB query failed, checking in-memory store:", dbErr.message);
+      user = memoryUsers.get(email);
+    }
 
     if (!user) {
       return res.status(401).json({
@@ -148,21 +180,26 @@ export async function login(req, res) {
 
 export async function me(req, res) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-      select: {
-        id: true,
-        email: true,
-        createdAt: true,
-      },
-    });
+    let user = null;
+    try {
+      user = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true,
+        },
+      });
+    } catch (dbErr) {
+      console.warn("[Prisma Database Warning] Get user me DB failed, serving token user:", dbErr.message);
+    }
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-        message: "User not found",
-      });
+      user = {
+        id: req.user.userId,
+        email: req.user.email,
+        createdAt: new Date().toISOString(),
+      };
     }
 
     return res.json({

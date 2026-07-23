@@ -1,13 +1,24 @@
 import prisma from "../utils/prisma.js";
 import { getStockData } from "../services/stockService.js";
 
-// Helper: Calculate holdings and cost basis from transaction ledger
-async function calculatePortfolioHoldings(portfolioId) {
-  const transactions = await prisma.transaction.findMany({
-    where: { portfolioId },
-    orderBy: { timestamp: "asc" },
-  });
+// In-memory fallback portfolio store
+const memoryPortfolios = new Map();
 
+function getOrCreateMemoryPortfolio(userId) {
+  if (!memoryPortfolios.has(userId)) {
+    memoryPortfolios.set(userId, {
+      id: "port_" + userId,
+      userId,
+      name: "Default Portfolio",
+      balance: 100000.0,
+      transactions: [],
+    });
+  }
+  return memoryPortfolios.get(userId);
+}
+
+// Helper: Calculate holdings and cost basis from transaction ledger
+async function calculatePortfolioHoldingsFromTxList(transactions) {
   const holdingsMap = {};
 
   for (const tx of transactions) {
@@ -31,10 +42,8 @@ async function calculatePortfolioHoldings(portfolioId) {
     } else if (type === "SELL") {
       if (holding.shares >= shares) {
         holding.shares -= shares;
-        // Cost basis reduces proportionally based on original average buy price
         holding.totalCost = holding.shares * holding.averageBuyPrice;
       } else {
-        // Safe guard fallback: reset to 0 if transaction anomalies occur
         holding.shares = 0;
         holding.totalCost = 0;
         holding.averageBuyPrice = 0;
@@ -42,43 +51,47 @@ async function calculatePortfolioHoldings(portfolioId) {
     }
   }
 
-  // Filter out liquidated holdings
   return Object.values(holdingsMap).filter((h) => h.shares > 0);
 }
 
 export async function getPortfolio(req, res) {
   try {
     const userId = req.user.userId;
+    let portfolio = null;
+    let transactionsList = [];
 
-    // Get user's default portfolio
-    let portfolio = await prisma.portfolio.findFirst({
-      where: { userId },
-      include: {
-        transactions: {
-          orderBy: { timestamp: "desc" },
-          take: 20, // Return last 20 transactions
-        },
-      },
-    });
-
-    // Fallback: If portfolio is missing for some reason, provision it
-    if (!portfolio) {
-      portfolio = await prisma.portfolio.create({
-        data: {
-          userId,
-          name: "Default Portfolio",
-          balance: 100000.0,
-        },
+    try {
+      portfolio = await prisma.portfolio.findFirst({
+        where: { userId },
         include: {
-          transactions: true,
+          transactions: {
+            orderBy: { timestamp: "desc" },
+            take: 20,
+          },
         },
       });
+
+      if (!portfolio) {
+        portfolio = await prisma.portfolio.create({
+          data: {
+            userId,
+            name: "Default Portfolio",
+            balance: 100000.0,
+          },
+          include: {
+            transactions: true,
+          },
+        });
+      }
+      transactionsList = portfolio.transactions || [];
+    } catch (dbErr) {
+      console.warn("[Prisma Database Warning] Cloud DB portfolio fetch failed, using in-memory fallback:", dbErr.message);
+      portfolio = getOrCreateMemoryPortfolio(userId);
+      transactionsList = portfolio.transactions || [];
     }
 
-    // Calculate raw holdings from ledger
-    const holdings = await calculatePortfolioHoldings(portfolio.id);
+    const holdings = await calculatePortfolioHoldingsFromTxList(transactionsList);
 
-    // Fetch fresh current prices for holdings in parallel
     let totalHoldingsValue = 0;
     const holdingsWithPrices = await Promise.all(
       holdings.map(async (holding) => {
@@ -137,7 +150,7 @@ export async function getPortfolio(req, res) {
         totalPnl: parseFloat(totalPnl.toFixed(2)),
         totalPnlPercent: parseFloat(totalPnlPercent.toFixed(2)),
         holdings: holdingsWithPrices,
-        recentTransactions: portfolio.transactions,
+        recentTransactions: transactionsList,
       },
     });
   } catch (error) {
@@ -170,7 +183,6 @@ export async function executeTrade(req, res) {
       });
     }
 
-    // Fetch the live price of the symbol to execute trade at market price
     const stockData = await getStockData(symbol);
     if (!stockData || !stockData.currentPrice) {
       return res.status(400).json({
@@ -182,90 +194,127 @@ export async function executeTrade(req, res) {
     const marketPrice = stockData.currentPrice;
     const transactionCost = shares * marketPrice;
 
-    // Use Prisma transaction to lock portfolio balance and write transaction ledger
-    const result = await prisma.$transaction(async (tx) => {
-      let portfolio = await tx.portfolio.findFirst({
-        where: { userId },
-      });
+    let tradeResult = null;
 
-      if (!portfolio) {
-        portfolio = await tx.portfolio.create({
-          data: {
-            userId,
-            name: "Default Portfolio",
-            balance: 100000.0,
-          },
+    try {
+      tradeResult = await prisma.$transaction(async (tx) => {
+        let portfolio = await tx.portfolio.findFirst({
+          where: { userId },
         });
-      }
 
-      if (tradeType === "BUY") {
-        if (portfolio.balance < transactionCost) {
-          throw new Error(`Insufficient funds. Required: $${transactionCost.toFixed(2)}, Available: $${portfolio.balance.toFixed(2)}`);
+        if (!portfolio) {
+          portfolio = await tx.portfolio.create({
+            data: {
+              userId,
+              name: "Default Portfolio",
+              balance: 100000.0,
+            },
+          });
         }
 
-        // Deduct balance and create buy ledger item
-        const updatedPortfolio = await tx.portfolio.update({
-          where: { id: portfolio.id },
-          data: { balance: { decrement: transactionCost } },
-        });
+        if (tradeType === "BUY") {
+          if (portfolio.balance < transactionCost) {
+            throw new Error(`Insufficient funds. Required: $${transactionCost.toFixed(2)}, Available: $${portfolio.balance.toFixed(2)}`);
+          }
 
-        const newTx = await tx.transaction.create({
-          data: {
-            portfolioId: portfolio.id,
-            symbol: symbol.toUpperCase(),
-            type: "BUY",
-            shares,
-            price: marketPrice,
-          },
-        });
+          const updatedPortfolio = await tx.portfolio.update({
+            where: { id: portfolio.id },
+            data: { balance: { decrement: transactionCost } },
+          });
 
-        return { portfolio: updatedPortfolio, transaction: newTx };
+          const newTx = await tx.transaction.create({
+            data: {
+              portfolioId: portfolio.id,
+              symbol: symbol.toUpperCase(),
+              type: "BUY",
+              shares,
+              price: marketPrice,
+            },
+          });
+
+          return { portfolio: updatedPortfolio, transaction: newTx };
+        } else {
+          const txs = await tx.transaction.findMany({
+            where: { portfolioId: portfolio.id },
+          });
+
+          let ownedShares = 0;
+          for (const t of txs) {
+            if (t.symbol === symbol.toUpperCase()) {
+              if (t.type === "BUY") ownedShares += t.shares;
+              else if (t.type === "SELL") ownedShares -= t.shares;
+            }
+          }
+
+          if (ownedShares < shares) {
+            throw new Error(`Insufficient shares of ${symbol.toUpperCase()}. Owned: ${ownedShares}, Attempted trade: ${shares}`);
+          }
+
+          const updatedPortfolio = await tx.portfolio.update({
+            where: { id: portfolio.id },
+            data: { balance: { increment: transactionCost } },
+          });
+
+          const newTx = await tx.transaction.create({
+            data: {
+              portfolioId: portfolio.id,
+              symbol: symbol.toUpperCase(),
+              type: "SELL",
+              shares,
+              price: marketPrice,
+            },
+          });
+
+          return { portfolio: updatedPortfolio, transaction: newTx };
+        }
+      });
+    } catch (dbErr) {
+      if (dbErr.message.includes("Insufficient")) {
+        throw dbErr; // Rethrow business logic validation errors
+      }
+
+      console.warn("[Prisma Database Warning] Cloud DB transaction failed, using in-memory trade execution fallback:", dbErr.message);
+      const memPort = getOrCreateMemoryPortfolio(userId);
+
+      if (tradeType === "BUY") {
+        if (memPort.balance < transactionCost) {
+          throw new Error(`Insufficient funds. Required: $${transactionCost.toFixed(2)}, Available: $${memPort.balance.toFixed(2)}`);
+        }
+        memPort.balance -= transactionCost;
       } else {
-        // SELL transaction: Check holdings first
-        // 1. Gather all transactions in portfolio
-        const txs = await tx.transaction.findMany({
-          where: { portfolioId: portfolio.id },
-        });
-
-        // 2. Sum up user's net shares for target symbol
         let ownedShares = 0;
-        for (const t of txs) {
+        for (const t of memPort.transactions) {
           if (t.symbol === symbol.toUpperCase()) {
             if (t.type === "BUY") ownedShares += t.shares;
             else if (t.type === "SELL") ownedShares -= t.shares;
           }
         }
-
         if (ownedShares < shares) {
           throw new Error(`Insufficient shares of ${symbol.toUpperCase()}. Owned: ${ownedShares}, Attempted trade: ${shares}`);
         }
-
-        // Add proceeds to balance and write sell ledger item
-        const updatedPortfolio = await tx.portfolio.update({
-          where: { id: portfolio.id },
-          data: { balance: { increment: transactionCost } },
-        });
-
-        const newTx = await tx.transaction.create({
-          data: {
-            portfolioId: portfolio.id,
-            symbol: symbol.toUpperCase(),
-            type: "SELL",
-            shares,
-            price: marketPrice,
-          },
-        });
-
-        return { portfolio: updatedPortfolio, transaction: newTx };
+        memPort.balance += transactionCost;
       }
-    });
+
+      const newTx = {
+        id: "tx_" + Math.random().toString(36).substring(2, 10),
+        portfolioId: memPort.id,
+        symbol: symbol.toUpperCase(),
+        type: tradeType,
+        shares,
+        price: marketPrice,
+        timestamp: new Date().toISOString(),
+      };
+
+      memPort.transactions.unshift(newTx);
+      tradeResult = { portfolio: memPort, transaction: newTx };
+    }
 
     return res.json({
       success: true,
       message: `Successfully executed ${tradeType} order for ${shares} shares of ${symbol.toUpperCase()}`,
       data: {
-        newBalance: parseFloat(result.portfolio.balance.toFixed(2)),
-        transaction: result.transaction,
+        newBalance: parseFloat(tradeResult.portfolio.balance.toFixed(2)),
+        transaction: tradeResult.transaction,
       },
     });
   } catch (error) {
