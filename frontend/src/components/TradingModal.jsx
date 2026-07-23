@@ -20,20 +20,26 @@ function TradingModal({ isOpen, onClose, symbol, companyName, currentPrice, user
 
     try {
       const res = await executeTradeApi(symbol, tradeType, parseFloat(shares));
-      if (res.success) {
-        setSuccessMsg(res.message);
+      if (res && res.success) {
+        setSuccessMsg(res.message || `Successfully executed ${tradeType} order!`);
         if (onTradeComplete) {
-          onTradeComplete(res.portfolio);
+          onTradeComplete(res.data);
         }
         setTimeout(() => {
           setSuccessMsg("");
           onClose();
-        }, 1500);
+        }, 1200);
       } else {
-        setError(res.error || "Trade execution failed.");
+        setError(res?.error || res?.message || "Trade execution failed.");
       }
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to execute paper trade.");
+      console.error("Trade error:", err);
+      setError(
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to execute paper trade."
+      );
     } finally {
       setLoading(false);
     }
