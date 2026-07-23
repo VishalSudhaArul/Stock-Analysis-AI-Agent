@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 const StockChart = ({ historicalData, currency = "USD" }) => {
   const [timeframe, setTimeframe] = useState("30D"); // 7D, 15D, 30D
   const [activeIndex, setActiveIndex] = useState(null);
+  const [showSMA, setShowSMA] = useState(false);
   const containerRef = useRef(null);
 
   if (!historicalData || historicalData.length === 0) {
@@ -55,6 +56,24 @@ const StockChart = ({ historicalData, currency = "USD" }) => {
   const areaD = pathD
     ? `${pathD} L ${points[points.length - 1].x} ${height - paddingY} L ${points[0].x} ${height - paddingY} Z`
     : "";
+
+  // Calculate Simple Moving Average (SMA)
+  const smaPeriod = timeframe === "7D" ? 3 : timeframe === "15D" ? 5 : 10;
+  const smaPoints = points.map((p, idx) => {
+    let sum = 0;
+    let count = 0;
+    for (let k = Math.max(0, idx - smaPeriod + 1); k <= idx; k++) {
+      sum += points[k].price;
+      count++;
+    }
+    const avg = sum / count;
+    const y = paddingY + (1 - (avg - minPrice) / priceRange) * usableHeight;
+    return { x: p.x, y };
+  });
+
+  const smaPathD = smaPoints.reduce((acc, p, index) => {
+    return acc + `${index === 0 ? "M" : "L"} ${p.x} ${p.y} `;
+  }, "");
 
   // Determine trend and colors
   const firstPrice = prices[0];
@@ -114,16 +133,29 @@ const StockChart = ({ historicalData, currency = "USD" }) => {
           </div>
         </div>
         
-        <div className="timeframe-buttons">
-          {["7D", "15D", "30D"].map((tf) => (
-            <button
-              key={tf}
-              onClick={() => setTimeframe(tf)}
-              className={`time-btn ${timeframe === tf ? "active" : ""}`}
-            >
-              {tf}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="timeframe-buttons">
+            {["7D", "15D", "30D"].map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                className={`time-btn ${timeframe === tf ? "active" : ""}`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowSMA(!showSMA)}
+            className={`time-btn ${showSMA ? "active" : ""}`}
+            style={{ 
+              background: showSMA ? 'rgba(167, 139, 250, 0.2)' : 'transparent',
+              borderColor: showSMA ? '#A78BFA' : 'var(--card-border)',
+              color: showSMA ? '#C084FC' : 'var(--text-muted)'
+            }}
+          >
+            📊 SMA {smaPeriod}
+          </button>
         </div>
       </div>
 
@@ -222,6 +254,18 @@ const StockChart = ({ historicalData, currency = "USD" }) => {
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
+            />
+          )}
+
+          {/* SMA Path Overlay */}
+          {showSMA && smaPathD && (
+            <path
+              d={smaPathD}
+              fill="none"
+              stroke="#A78BFA"
+              strokeWidth="2"
+              strokeDasharray="4 4"
+              style={{ animation: 'fadeInUp 0.3s ease-out' }}
             />
           )}
 

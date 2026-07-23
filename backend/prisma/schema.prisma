@@ -1,0 +1,62 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String           @id @default(uuid())
+  email        String           @unique
+  passwordHash String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  watchlist    WatchlistItem[]
+  portfolios   Portfolio[]
+  savedReports SavedReport[]
+}
+
+model WatchlistItem {
+  id          String   @id @default(uuid())
+  userId      String
+  symbol      String
+  companyName String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, symbol])
+}
+
+model Portfolio {
+  id           String        @id @default(uuid())
+  userId       String
+  name         String
+  balance      Float         @default(100000.0) // Starting mock cash
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+}
+
+model Transaction {
+  id          String    @id @default(uuid())
+  portfolioId String
+  symbol      String
+  type        String    // "BUY" or "SELL"
+  shares      Float
+  price       Float
+  timestamp   DateTime  @default(now())
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+}
+
+model SavedReport {
+  id           String   @id @default(uuid())
+  userId       String
+  symbol       String
+  companyName  String
+  analysisData String   // JSON string of analysis report
+  shareId      String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+}

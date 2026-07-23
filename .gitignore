@@ -1,7 +1,21 @@
 node_modules/
-.env
 dist/
 build/
 .DS_Store
 AI_Investment_Agent_Submission.zip
 chat_transcript.txt
+
+# Databases and journal files
+*.db
+*.db-journal
+
+# Environments and Secrets
+.env
+.env.*
+.env.local
+
+# Scratch and reference logs
+scratch_google.js
+test_multi_agent.js
+AI-Investment-Agent.txt
+Important Links.txt

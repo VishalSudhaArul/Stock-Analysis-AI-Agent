@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import investmentRoutes from "./routes/investment.js";
+import authRoutes from "./routes/auth.js";
 
 dotenv.config();
 
@@ -12,6 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/investment", investmentRoutes);
+app.use("/api/auth", authRoutes);
 
 app.get("/", (req, res) => {
   res.json({

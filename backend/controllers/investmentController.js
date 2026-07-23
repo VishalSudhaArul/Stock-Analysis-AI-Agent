@@ -1,4 +1,4 @@
-import { analyzeInvestment } from "../services/investmentService.js";
+import { analyzeInvestment, chatWithAnalyst } from "../services/investmentService.js";
 
 export async function analyze(req, res) {
   try {
@@ -23,6 +23,31 @@ export async function analyze(req, res) {
       success: false,
       message: error.message,
       error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+}
+
+export async function chat(req, res) {
+  try {
+    const { message, history, companyName, stockData, news, analysis } = req.body;
+
+    if (!message || !companyName) {
+      return res.status(400).json({
+        error: "Message and Company name are required",
+      });
+    }
+
+    const reply = await chatWithAnalyst(message, history, companyName, stockData, news, analysis);
+
+    res.json({
+      success: true,
+      reply,
+    });
+  } catch (error) {
+    console.error("Chat Controller Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 }

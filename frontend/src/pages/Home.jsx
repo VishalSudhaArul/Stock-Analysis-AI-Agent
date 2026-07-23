@@ -13,6 +13,7 @@ import NewsCard from "../components/NewsCard";
 import SubAgentInsights from "../components/SubAgentInsights";
 import CompareMatrix from "../components/CompareMatrix";
 import Watchlist from "../components/Watchlist";
+import AnalystChat from "../components/AnalystChat";
 
 function Home() {
   const [result, setResult] = useState(null);
@@ -21,7 +22,33 @@ function Home() {
   const [watchlist, setWatchlist] = useState(() => {
     try {
       const stored = localStorage.getItem("watchlist");
-      return stored ? JSON.parse(stored) : [];
+      const parsed = stored ? JSON.parse(stored) : [];
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((item) => item && typeof item === "object")
+          .map((item) => {
+            let sym = "N/A";
+            let compName = "N/A";
+            if (item.symbol && typeof item.symbol === "object") {
+              sym = item.symbol.symbol || "N/A";
+              compName = item.symbol.name || "N/A";
+            } else if (typeof item.symbol === "string") {
+              sym = item.symbol;
+              compName = item.companyName || item.name || "N/A";
+            }
+            return {
+              symbol: sym,
+              companyName: compName,
+              recommendation: item.recommendation || "HOLD",
+              confidence: item.confidence || 50,
+              price: item.price || 0,
+              currency: item.currency || "USD",
+              addedAt: item.addedAt || new Date().toISOString(),
+              fullData: item.fullData || null,
+            };
+          });
+      }
+      return [];
     } catch {
       return [];
     }
@@ -229,6 +256,9 @@ function Home() {
         onAnalyze={handleSearch}
         onRemove={handleRemoveFromWatchlist}
       />
+
+      {/* Floating Analyst Chat */}
+      <AnalystChat currentResult={result} />
     </div>
   );
 }
