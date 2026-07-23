@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -8,19 +8,19 @@ generator client {
 }
 
 model User {
-  id           String           @id @default(uuid())
-  email        String           @unique
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  email        String          @unique
   passwordHash String
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
   watchlist    WatchlistItem[]
   portfolios   Portfolio[]
   savedReports SavedReport[]
 }
 
 model WatchlistItem {
-  id          String   @id @default(uuid())
-  userId      String
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
   symbol      String
   companyName String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -30,18 +30,18 @@ model WatchlistItem {
 }
 
 model Portfolio {
-  id           String        @id @default(uuid())
-  userId       String
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String        @db.ObjectId
   name         String
-  balance      Float         @default(100000.0) // Starting mock cash
+  balance      Float         @default(100000.0)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
   createdAt    DateTime      @default(now())
 }
 
 model Transaction {
-  id          String    @id @default(uuid())
-  portfolioId String
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  portfolioId String    @db.ObjectId
   symbol      String
   type        String    // "BUY" or "SELL"
   shares      Float
@@ -51,11 +51,11 @@ model Transaction {
 }
 
 model SavedReport {
-  id           String   @id @default(uuid())
-  userId       String?
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String?  @db.ObjectId
   symbol       String
   companyName  String
-  analysisData String   @db.Text
+  analysisData String
   shareId      String   @unique
   user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
