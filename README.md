@@ -2,7 +2,7 @@
 
 A professional-grade, intelligent SaaS web application built to analyze publicly traded companies and provide clear, data-driven investment recommendations (BUY, HOLD, SELL). It aggregates live stock market data, fetches the latest news articles for sentiment context, and orchestrates analysis through a multi-agent LangGraph state pipeline to generate structured, institutional-quality investment reports.
 
-Now upgraded with a secure database layer and user authentication to support persistent watchlists, saved reports, and mock portfolio simulation.
+Now fully upgraded into a real-world SaaS startup platform complete with user authentication, persistent watchlists, cached report sharing, and an interactive Robinhood-style paper trading desk with $100,000 mock cash.
 
 ---
 
@@ -18,7 +18,7 @@ Now upgraded with a secure database layer and user authentication to support per
 The platform uses a decoupled frontend-backend architecture integrated with a stateful AI agent graph:
 
 ```
-                  React Frontend (Vite)
+                  React Frontend (Vite + React Router)
                            │
                            ▼
                     Express Backend ◄─────────► Database (Prisma + SQLite)
@@ -40,7 +40,7 @@ The platform uses a decoupled frontend-backend architecture integrated with a st
     (Financials)       (News/Sentiment)   (Final Recommendation)
                            │
                            ▼
-                Structured JSON Output ──► Dashboard UI
+                Structured JSON Output ──► Dashboard UI & Trading Desk
 ```
 
 ### LangGraph Stateful Analysis Pipeline:
@@ -57,8 +57,8 @@ We use **Prisma ORM** coupled with a local **SQLite** database for development (
 * **User**: Manages authenticated client profiles. Passwords are secured using `bcryptjs` one-way hashing.
 * **WatchlistItem**: Stores users' pinned stocks, synchronized across devices.
 * **Portfolio**: Created automatically upon signup with a default balance of **$100,000** for mock paper trading.
-* **Transaction**: Logs all mock buy/sell actions to track portfolio performance.
-* **SavedReport**: Caches AI analysis results against a unique `shareId` to prevent duplicate AI model calls and enable viral public report sharing.
+* **Transaction**: Logs all mock buy/sell actions to track portfolio performance and weighted cost basis.
+* **SavedReport**: Caches AI analysis results against a unique `shareId` to prevent duplicate AI model calls and enable viral public report sharing with real-time stock prices.
 
 ---
 
@@ -114,11 +114,12 @@ We use **Prisma ORM** coupled with a local **SQLite** database for development (
 
 ---
 
-## 💡 Key Decisions & Trade-offs
-1. **LangGraph over Raw LLM Chains**: Utilizing a state graph ensures structured routing of context, laying the groundwork to expand with specialized debate agents or verification loops.
-2. **Prisma ORM Database Migration**: Migrating from localized client storage (`localStorage`) to a structured relational schema enables cross-device synchronization, secure sessions, and viral shared URLs.
-3. **Structured Outputs (Zod Validation)**: Output formatting is strictly enforced via schemas at each node of our agent graph. This eliminates JSON parsing failures.
-4. **CSS-First Design System**: Opting for a bespoke CSS system instead of a generic framework demonstrates raw design capabilities and results in a highly customized glassmorphic workspace.
+## 💡 Key Features & Innovation
+1. **LangGraph Multi-Agent Engine**: Modular sub-agent graph providing quantitative market evaluation and sentiment scoring.
+2. **Robinhood-Style Paper Trading Desk**: Virtual execution engine with real-time position calculations, weighted cost basis, and live profit/loss updates.
+3. **Viral Public Report Publishing**: Saved reports generate a shareable URL (`/reports/:shareId`) featuring cached AI insights alongside real-time live ticker quotes.
+4. **Auth & Persistence**: JWT-backed sessions automatically provision $100k paper portfolios and cloud-synced watchlists.
+5. **CSS-First Design System**: Bespoke glassmorphism UI with responsive grid, dark/light theme toggle, and print-ready PDF export.
 
 ---
 
@@ -140,9 +141,8 @@ We use **Prisma ORM** coupled with a local **SQLite** database for development (
 
 ## 🗺️ Product Roadmap
 
-* [x] **Phase 1**: Multi-Agent LangGraph Orchestrator (Market + Sentiment analysis).
-* [x] **Phase 2**: Real-time Financial Scraping (Google Finance symbol resolver + Yahoo Finance API).
-* [x] **Phase 3**: User Authentication & Relational Database setup (JWT + Prisma ORM + Default Portfolio).
-* [ ] **Phase 4**: Report Caching & Viral Publishing (Milestone 2 - *In Progress*).
-* [ ] **Phase 5**: Interactive Paper Trading Dashboard (Milestone 3).
-* [ ] **Phase 6**: PDF Document Upload & RAG (Earnings transcripts / 10-Ks).
+* [x] **Milestone 1**: Database Setup, Prisma ORM Schemas & JWT Authentication.
+* [x] **Milestone 2**: AI Report Caching Engine & Viral Public Report Share Links.
+* [x] **Milestone 3**: Paper Trading Engine & Transaction Audit Ledger.
+* [x] **Milestone 4**: Full Frontend SaaS Transformation (Auth Modals, Trading Desk, Shared Report Page & Portfolio Integration).
+* [ ] **Milestone 5**: PDF & Earnings Call Transcript RAG Analysis (Document QA Agent).
