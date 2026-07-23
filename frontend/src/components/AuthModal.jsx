@@ -25,15 +25,21 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
         res = await login(email, password);
       }
 
-      if (res.success) {
+      if (res && res.success) {
         onClose();
         setEmail("");
         setPassword("");
       } else {
-        setError(res.error || "Authentication failed.");
+        setError(res?.error || res?.message || "Authentication failed.");
       }
     } catch (err) {
-      setError(err.response?.data?.error || "Server connection error.");
+      console.error("Auth submit error:", err);
+      const serverErrMsg =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        err.message ||
+        "Server connection error.";
+      setError(serverErrMsg);
     } finally {
       setLoading(false);
     }
