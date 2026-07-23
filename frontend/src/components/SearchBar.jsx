@@ -41,7 +41,7 @@ function SearchBar({ onSearch, loading }) {
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.remove("mousedown", handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
