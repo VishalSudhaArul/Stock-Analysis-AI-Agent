@@ -1,11 +1,14 @@
 import YahooFinance from "yahoo-finance2";
 import axios from "axios";
-import { COMPANY_SYMBOLS } from "../utils/companySymbols.js";
+import { COMPANY_SYMBOLS, GOOGLE_FINANCE_TICKERS } from "../utils/companySymbols.js";
 import { getAiModel } from "./aiService.js";
 
 const yahooFinance = new YahooFinance({
-  suppressNotices: ["yahooSurvey"],
+  suppressNotices: ["yahooSurvey", "ripHistorical"],
 });
+
+// Fast In-Memory Symbol Cache
+const DYNAMIC_SYMBOL_CACHE = new Map();
 
 // Helper: Parse currency strings to float
 function parseCurrencyString(val) {
@@ -34,9 +37,38 @@ function parseMarketCap(val) {
   return isNaN(rawNum) ? null : rawNum;
 }
 
-// AI Symbol Resolver using Gemini
+// AI Symbol Resolver with Fast Path & In-Memory Caching
 async function resolveSymbolWithAI(company) {
+  if (!company) return null;
+  const cleaned = company.trim().toUpperCase();
+
+  // 1. Direct ticker with exchange (e.g. "AAPL:NASDAQ")
+  if (cleaned.includes(":")) return cleaned;
+
+  // 2. Direct lookup in pre-configured dictionary
+  if (GOOGLE_FINANCE_TICKERS[cleaned]) {
+    console.log(`[Fast Path] Static map resolved "${company}" -> ${GOOGLE_FINANCE_TICKERS[cleaned]}`);
+    return GOOGLE_FINANCE_TICKERS[cleaned];
+  }
+
+  // 3. Check dynamic runtime cache
+  if (DYNAMIC_SYMBOL_CACHE.has(cleaned)) {
+    const cached = DYNAMIC_SYMBOL_CACHE.get(cleaned);
+    console.log(`[Fast Path] Dynamic cache resolved "${company}" -> ${cached}`);
+    return cached;
+  }
+
+  // 4. Infer standard 1-5 char US stock ticker without LLM latency
+  if (/^[A-Z]{1,5}$/.test(cleaned)) {
+    const inferred = `${cleaned}:NASDAQ`;
+    DYNAMIC_SYMBOL_CACHE.set(cleaned, inferred);
+    console.log(`[Fast Path] Inferred stock ticker format for "${company}" -> ${inferred}`);
+    return inferred;
+  }
+
+  // 5. Fallback: Query Gemini AI for complex/unrecognized company names
   try {
+    console.log(`[AI Resolution] Querying Gemini AI for ticker resolution of: "${company}"`);
     const model = getAiModel();
     const prompt = `You are a financial stock symbol resolver. 
 Given a company name or query, return ONLY its Google Finance stock ticker in the format SYMBOL:EXCHANGE (e.g., Apple -> AAPL:NASDAQ, Infosys -> INFY:NSE, Cupid -> CUPID:NSE, Tesla -> TSLA:NASDAQ, Tata Motors -> TATAMOTORS:NSE, Nvidia -> NVDA:NASDAQ). 
@@ -47,18 +79,22 @@ Company name: "${company}"
 Ticker:`;
 
     const response = await model.invoke(prompt);
-    const ticker = response.content.trim().toUpperCase();
-    console.log(`AI resolved "${company}" to Google Finance ticker: ${ticker}`);
-    return ticker;
+    const ticker = response.content.trim().toUpperCase().replace(/[`'\"]/g, "");
+    if (ticker && ticker.includes(":")) {
+      DYNAMIC_SYMBOL_CACHE.set(cleaned, ticker);
+      console.log(`AI resolved "${company}" to Google Finance ticker: ${ticker}`);
+      return ticker;
+    }
+    return null;
   } catch (error) {
     console.error("AI symbol resolution error:", error.message);
     return null;
   }
 }
 
-// Google Finance scraper
+// Resilient Google Finance scraper
 async function getGoogleFinanceData(company) {
-  // Step 1: Resolve symbol using AI
+  // Step 1: Resolve symbol using Fast Path or AI
   const ticker = await resolveSymbolWithAI(company);
   if (!ticker || !ticker.includes(":")) {
     throw new Error(`Could not resolve Google Finance ticker for "${company}"`);
@@ -78,19 +114,19 @@ async function getGoogleFinanceData(company) {
 
   const html = await response.text();
 
-  // 1. Company Name
-  const nameMatch = html.match(/<div class="gO24Ff">([^<]+)<\/div>/);
+  // 1. Company Name (Multi-selector fallback)
+  const nameMatch = html.match(/<div class="gO24Ff">([^<]+)<\/div>/) || html.match(/<div[^>]*class="[^"]*zzV1lb[^"]*"[^>]*>([^<]+)<\/div>/);
   const companyName = nameMatch ? nameMatch[1] : company;
 
-  // 2. Current Price
-  const priceDivMatch = html.match(/<div[^>]*class="[^"]*N6SYTe[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+  // 2. Current Price (Multi-selector fallback)
+  const priceDivMatch = html.match(/<div[^>]*class="[^"]*N6SYTe[^"]*"[^>]*>([\s\S]*?)<\/div>/) || html.match(/<div[^>]*class="[^"]*YMlKec fxfaW[^"]*"[^>]*>([\s\S]*?)<\/div>/);
   let priceStr = null;
   if (priceDivMatch) {
     const valMatch = priceDivMatch[1].match(/\$?₹?([0-9,]+\.[0-9]+)/);
     if (valMatch) priceStr = valMatch[1];
   }
   if (!priceStr) {
-    const valMatch = html.match(/jsname="Pdsbrc"[^>]*><span>([^<]+)<\/span>/);
+    const valMatch = html.match(/jsname="Pdsbrc"[^>]*><span>([^<]+)<\/span>/) || html.match(/<div[^>]*class="[^"]*YMlKec[^"]*"[^>]*>([^<]+)<\/div>/);
     if (valMatch) priceStr = valMatch[1];
   }
   const currentPrice = parseCurrencyString(priceStr);

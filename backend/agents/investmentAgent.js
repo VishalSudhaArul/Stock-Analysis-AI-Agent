@@ -1,4 +1,4 @@
-import { StateGraph, START, END } from "@langchain/langgraph";
+import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 import { invokeWithModelFallback } from "../services/aiService.js";
 import { z } from "zod";
 
@@ -31,15 +31,15 @@ const investmentSchema = z.object({
   reasoning: z.string().describe("Detailed reasoning behind the recommendation"),
 });
 
-// 2. Define the Agent State
-const agentState = {
-  company: { value: null },
-  stockData: { value: null },
-  news: { value: null },
-  marketAnalysis: { value: null },
-  sentimentAnalysis: { value: null },
-  analysis: { value: null },
-};
+// 2. Define the Agent State using Annotation.Root
+const GraphAnnotation = Annotation.Root({
+  company: Annotation({ value: (x, y) => y ?? x, default: () => null }),
+  stockData: Annotation({ value: (x, y) => y ?? x, default: () => null }),
+  news: Annotation({ value: (x, y) => y ?? x, default: () => null }),
+  marketAnalysis: Annotation({ value: (x, y) => y ?? x, default: () => null }),
+  sentimentAnalysis: Annotation({ value: (x, y) => y ?? x, default: () => null }),
+  analysis: Annotation({ value: (x, y) => y ?? x, default: () => null }),
+});
 
 // 3. Define Graph Nodes with Fallback Invocation
 async function marketAnalystNode(state) {
@@ -93,7 +93,7 @@ Synthesize a comprehensive, high-quality, professional investment report and fin
 }
 
 // 4. Build and Compile the LangGraph
-const workflow = new StateGraph({ channels: agentState })
+const workflow = new StateGraph(GraphAnnotation)
   .addNode("marketAnalyst", marketAnalystNode)
   .addNode("sentimentAnalyst", sentimentAnalystNode)
   .addNode("cio", investmentDecisionNode)
