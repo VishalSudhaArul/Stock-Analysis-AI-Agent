@@ -117,6 +117,8 @@ function PortfolioDashboard({ onSearchStock }) {
                 const itemPnl = item.pnl ?? 0;
                 const itemPnlPercent = item.pnlPercent ?? 0;
                 const isHoldingProfit = itemPnl >= 0;
+                const isIndian = item.currency === "INR" || item.symbol.endsWith(".NS") || item.symbol.includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC"].includes(item.symbol.toUpperCase());
+                const currSymbol = isIndian ? "₹" : "$";
 
                 return (
                   <tr key={item.symbol}>
@@ -127,16 +129,16 @@ function PortfolioDashboard({ onSearchStock }) {
                       </div>
                     </td>
                     <td><strong style={{ color: "var(--text-primary)" }}>{item.shares}</strong></td>
-                    <td>${item.averageBuyPrice?.toFixed(2)}</td>
+                    <td>{currSymbol}{item.averageBuyPrice?.toFixed(2)}</td>
                     <td>
-                      <span style={{ fontWeight: 600 }}>${item.currentPrice?.toFixed(2)}</span>
+                      <span style={{ fontWeight: 600 }}>{currSymbol}{item.currentPrice?.toFixed(2)}</span>
                     </td>
                     <td>
-                      <strong>${item.currentValue?.toFixed(2)}</strong>
+                      <strong>{currSymbol}{item.currentValue?.toFixed(2)}</strong>
                     </td>
                     <td className={isHoldingProfit ? "diff-up" : "diff-down"}>
                       <span style={{ fontWeight: 600 }}>
-                        {isHoldingProfit ? "+" : ""}${itemPnl.toFixed(2)} ({isHoldingProfit ? "+" : ""}{itemPnlPercent.toFixed(2)}%)
+                        {isHoldingProfit ? "+" : ""}{currSymbol}{itemPnl.toFixed(2)} ({isHoldingProfit ? "+" : ""}{itemPnlPercent.toFixed(2)}%)
                       </span>
                     </td>
                     <td>
@@ -155,6 +157,7 @@ function PortfolioDashboard({ onSearchStock }) {
                               symbol: item.symbol,
                               companyName: item.companyName || item.symbol,
                               currentPrice: item.currentPrice,
+                              currency: isIndian ? "INR" : "USD",
                             })
                           }
                         >
@@ -195,26 +198,31 @@ function PortfolioDashboard({ onSearchStock }) {
               </tr>
             </thead>
             <tbody>
-              {recentTransactions.map((tx) => (
-                <tr key={tx.id || Math.random()}>
-                  <td style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                    {tx.timestamp ? new Date(tx.timestamp).toLocaleString() : "Just Now"}
-                  </td>
-                  <td>
-                    <span className={`watchlist-badge ${tx.type === "BUY" ? "rec-buy" : "rec-sell"}`}>
-                      {tx.type}
-                    </span>
-                  </td>
-                  <td>
-                    <strong style={{ color: "var(--accent-primary)" }}>{tx.symbol}</strong>
-                  </td>
-                  <td>{tx.shares}</td>
-                  <td>${tx.price?.toFixed(2)}</td>
-                  <td>
-                    <strong>${(tx.shares * tx.price).toFixed(2)}</strong>
-                  </td>
-                </tr>
-              ))}
+              {recentTransactions.map((tx) => {
+                const isIndianTx = tx.currency === "INR" || (tx.symbol || "").endsWith(".NS") || (tx.symbol || "").includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC"].includes((tx.symbol || "").toUpperCase());
+                const txCurrSymbol = isIndianTx ? "₹" : "$";
+
+                return (
+                  <tr key={tx.id || Math.random()}>
+                    <td style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                      {tx.timestamp ? new Date(tx.timestamp).toLocaleString() : "Just Now"}
+                    </td>
+                    <td>
+                      <span className={`watchlist-badge ${tx.type === "BUY" ? "rec-buy" : "rec-sell"}`}>
+                        {tx.type}
+                      </span>
+                    </td>
+                    <td>
+                      <strong style={{ color: "var(--accent-primary)" }}>{tx.symbol}</strong>
+                    </td>
+                    <td>{tx.shares}</td>
+                    <td>{txCurrSymbol}{tx.price?.toFixed(2)}</td>
+                    <td>
+                      <strong>{txCurrSymbol}{(tx.shares * tx.price).toFixed(2)}</strong>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
@@ -230,6 +238,7 @@ function PortfolioDashboard({ onSearchStock }) {
           symbol={tradeModalStock.symbol}
           companyName={tradeModalStock.companyName}
           currentPrice={tradeModalStock.currentPrice}
+          currency={tradeModalStock.currency}
           userBalance={cashBalance}
           onTradeComplete={() => fetchPortfolio()}
         />

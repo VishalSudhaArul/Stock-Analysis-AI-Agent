@@ -58,13 +58,7 @@ async function resolveSymbolWithAI(company) {
     return cached;
   }
 
-  // 4. Infer standard 1-5 char US stock ticker without LLM latency
-  if (/^[A-Z]{1,5}$/.test(cleaned)) {
-    const inferred = `${cleaned}:NASDAQ`;
-    DYNAMIC_SYMBOL_CACHE.set(cleaned, inferred);
-    console.log(`[Fast Path] Inferred stock ticker format for "${company}" -> ${inferred}`);
-    return inferred;
-  }
+  // 4. Query Gemini AI for precise ticker resolution (e.g. CIPLA -> CIPLA:NSE, Apple -> AAPL:NASDAQ)
 
   // 5. Fallback: Query Gemini AI for complex/unrecognized company names
   try {

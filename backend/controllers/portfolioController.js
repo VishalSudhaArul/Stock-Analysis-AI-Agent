@@ -130,6 +130,7 @@ export async function getPortfolio(req, res) {
           pnl: parseFloat(pnl.toFixed(2)),
           pnlPercent: parseFloat(pnlPercent.toFixed(2)),
           changePercent: parseFloat(changePercent.toFixed(2)),
+          currency: stockData?.currency || (holding.symbol.endsWith(".NS") || holding.symbol.includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID"].includes(holding.symbol.toUpperCase()) ? "INR" : "USD"),
         };
       })
     );
@@ -137,6 +138,17 @@ export async function getPortfolio(req, res) {
     const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
     const totalPnl = totalHoldingsValue - totalInvested;
     const totalPnlPercent = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+
+    const indianSymbolsList = ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC", "HDFCBANK", "ICICIBANK", "SBIN", "WIPRO"];
+
+    const enrichedTransactions = transactionsList.map((tx) => {
+      const sym = (tx.symbol || "").toUpperCase();
+      const isIndian = sym.endsWith(".NS") || sym.includes(":NSE") || indianSymbolsList.includes(sym);
+      return {
+        ...tx,
+        currency: isIndian ? "INR" : "USD",
+      };
+    });
 
     return res.json({
       success: true,
@@ -150,7 +162,7 @@ export async function getPortfolio(req, res) {
         totalPnl: parseFloat(totalPnl.toFixed(2)),
         totalPnlPercent: parseFloat(totalPnlPercent.toFixed(2)),
         holdings: holdingsWithPrices,
-        recentTransactions: transactionsList,
+        recentTransactions: enrichedTransactions,
       },
     });
   } catch (error) {
