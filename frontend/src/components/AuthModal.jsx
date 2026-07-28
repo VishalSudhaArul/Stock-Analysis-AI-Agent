@@ -63,7 +63,27 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
             : "Sign in to access your paper trading desk and saved reports."}
         </div>
 
-        {error && <div className="auth-error-badge">{error}</div>}
+        {error && (
+          <div className="auth-error-badge" style={{ display: "flex", flexDirection: "column", gap: "6px", textAlign: "center" }}>
+            <span>⚠️ {error}</span>
+            {mode === "login" && (
+              <div style={{ fontSize: "0.82rem", marginTop: "4px", color: "rgba(255, 255, 255, 0.8)" }}>
+                Visiting for the first time?{" "}
+                <button
+                  type="button"
+                  className="auth-switch-link"
+                  style={{ textDecoration: "underline", fontWeight: "bold", cursor: "pointer" }}
+                  onClick={() => {
+                    setError("");
+                    setMode("signup");
+                  }}
+                >
+                  Click here to Create Account
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
