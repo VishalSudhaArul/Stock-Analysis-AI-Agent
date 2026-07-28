@@ -98,12 +98,14 @@ export async function getPortfolio(req, res) {
         let currentPrice = holding.averageBuyPrice;
         let changePercent = 0;
         let companyName = "N/A";
+        let fetchedCurrency = null;
 
         try {
           const stockData = await getStockData(holding.symbol);
           if (stockData) {
-            currentPrice = stockData.currentPrice;
+            currentPrice = stockData.currentPrice || holding.averageBuyPrice;
             companyName = stockData.companyName || "N/A";
+            fetchedCurrency = stockData.currency;
             if (stockData.currentPrice && stockData.previousClose) {
               changePercent = ((stockData.currentPrice - stockData.previousClose) / stockData.previousClose) * 100;
             }
@@ -119,6 +121,8 @@ export async function getPortfolio(req, res) {
 
         totalHoldingsValue += currentValue;
 
+        const isIndianHolding = fetchedCurrency === "INR" || holding.symbol.endsWith(".NS") || holding.symbol.includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC"].includes(holding.symbol.toUpperCase());
+
         return {
           symbol: holding.symbol,
           companyName,
@@ -130,7 +134,7 @@ export async function getPortfolio(req, res) {
           pnl: parseFloat(pnl.toFixed(2)),
           pnlPercent: parseFloat(pnlPercent.toFixed(2)),
           changePercent: parseFloat(changePercent.toFixed(2)),
-          currency: stockData?.currency || (holding.symbol.endsWith(".NS") || holding.symbol.includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID"].includes(holding.symbol.toUpperCase()) ? "INR" : "USD"),
+          currency: isIndianHolding ? "INR" : "USD",
         };
       })
     );
