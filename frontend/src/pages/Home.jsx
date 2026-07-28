@@ -307,6 +307,7 @@ function Home() {
           symbol={result.marketData?.symbol}
           companyName={result.analysis?.company}
           currentPrice={result.marketData?.currentPrice}
+          currency={result.marketData?.currency}
           onTradeComplete={() => setActiveTab("portfolio")}
         />
       )}

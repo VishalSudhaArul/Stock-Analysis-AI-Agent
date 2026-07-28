@@ -1,14 +1,30 @@
-import { useState } from "react";
-import { executeTradeApi } from "../services/api";
+import { useState, useEffect } from "react";
+import { executeTradeApi, getPortfolioApi } from "../services/api";
 
-function TradingModal({ isOpen, onClose, symbol, companyName, currentPrice, userBalance, onTradeComplete }) {
+function TradingModal({ isOpen, onClose, symbol, companyName, currentPrice, currency = "USD", userBalance: initialBalance, onTradeComplete }) {
   const [tradeType, setTradeType] = useState("BUY"); // 'BUY' or 'SELL'
   const [shares, setShares] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [cashBalance, setCashBalance] = useState(initialBalance);
+
+  useEffect(() => {
+    if (isOpen && (cashBalance === undefined || cashBalance === null)) {
+      getPortfolioApi()
+        .then((res) => {
+          if (res && res.success && res.data) {
+            setCashBalance(res.data.cashBalance);
+          }
+        })
+        .catch((err) => console.warn("Could not fetch user portfolio balance for trading modal:", err.message));
+    }
+  }, [isOpen, cashBalance]);
 
   if (!isOpen) return null;
+
+  const symbolMap = { USD: "$", INR: "₹", EUR: "€", GBP: "£" };
+  const currencySymbol = symbolMap[currency] || (currency === "INR" ? "₹" : "$");
 
   const totalCost = (parseFloat(shares || 0) * (currentPrice || 0)).toFixed(2);
 
@@ -22,6 +38,9 @@ function TradingModal({ isOpen, onClose, symbol, companyName, currentPrice, user
       const res = await executeTradeApi(symbol, tradeType, parseFloat(shares));
       if (res && res.success) {
         setSuccessMsg(res.message || `Successfully executed ${tradeType} order!`);
+        if (res.data?.newBalance !== undefined) {
+          setCashBalance(res.data.newBalance);
+        }
         if (onTradeComplete) {
           onTradeComplete(res.data);
         }
@@ -81,12 +100,14 @@ function TradingModal({ isOpen, onClose, symbol, companyName, currentPrice, user
           <div className="trade-info-card">
             <div className="trade-info-row">
               <span className="trade-info-label">Current Market Price</span>
-              <span className="trade-info-value">${currentPrice?.toFixed(2)}</span>
+              <span className="trade-info-value">{currencySymbol}{currentPrice?.toFixed(2)}</span>
             </div>
             {tradeType === "BUY" && (
               <div className="trade-info-row">
                 <span className="trade-info-label">Available Cash</span>
-                <span className="trade-info-value">${userBalance?.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                <span className="trade-info-value">
+                  ${(cashBalance ?? 100000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
               </div>
             )}
           </div>
@@ -107,7 +128,7 @@ function TradingModal({ isOpen, onClose, symbol, companyName, currentPrice, user
           <div className="trade-summary-card">
             <div className="trade-summary-row">
               <span>Estimated Order Total</span>
-              <span className="trade-summary-price">${totalCost}</span>
+              <span className="trade-summary-price">{currencySymbol}{totalCost}</span>
             </div>
           </div>
 

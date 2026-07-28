@@ -27,6 +27,7 @@ export const GOOGLE_FINANCE_TICKERS = {
   // Indian Major Equities (NSE)
   INFOSYS: "INFY:NSE",
   INFY: "INFY:NSE",
+  IRFC: "IRFC:NSE",
   TATA: "TATAMOTORS:NSE",
   TATAMOTORS: "TATAMOTORS:NSE",
   TCS: "TCS:NSE",
