@@ -64,6 +64,7 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
   };
 
   const getStanceColor = (stance) => {
+    if (!stance) return "var(--text-muted)";
     const s = stance.toUpperCase();
     if (s === "UNDERVALUED" || s === "BULLISH") return "var(--positive)";
     if (s === "FAIRLY_VALUED" || s === "NEUTRAL") return "#F59E0B";
@@ -85,7 +86,7 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
                 border: `1px solid ${getStanceColor(marketAnalysis.valuationStance)}30`
               }}
             >
-              {marketAnalysis.valuationStance}
+              {marketAnalysis.valuationStance || "NEUTRAL"}
             </span>
           </div>
 
@@ -98,7 +99,7 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
               Metrics Analyzed
             </h4>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {marketAnalysis.keyMetricsEvaluated.map((metric, idx) => (
+              {(marketAnalysis.keyMetricsEvaluated || []).map((metric, idx) => (
                 <span 
                   key={idx} 
                   className="tag" 
@@ -118,9 +119,9 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
         </div>
 
         <SpeedometerGauge 
-          value={marketAnalysis.financialScore} 
+          value={marketAnalysis.financialScore ?? 50} 
           label="Health Score" 
-          color={getScoreColor(marketAnalysis.financialScore)} 
+          color={getScoreColor(marketAnalysis.financialScore ?? 50)} 
         />
       </div>
 
@@ -137,7 +138,7 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
                 border: `1px solid ${getStanceColor(sentimentAnalysis.sentimentStance)}30`
               }}
             >
-              {sentimentAnalysis.sentimentStance}
+              {sentimentAnalysis.sentimentStance || "NEUTRAL"}
             </span>
           </div>
 
@@ -150,7 +151,7 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
               Key News Themes
             </h4>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {sentimentAnalysis.keyNewsThemes.map((theme, idx) => (
+              {(sentimentAnalysis.keyNewsThemes || []).map((theme, idx) => (
                 <span 
                   key={idx} 
                   className="tag" 
@@ -170,9 +171,9 @@ function SubAgentInsights({ marketAnalysis, sentimentAnalysis }) {
         </div>
 
         <SpeedometerGauge 
-          value={sentimentAnalysis.sentimentScore} 
+          value={sentimentAnalysis.sentimentScore ?? 50} 
           label="News Stance" 
-          color={getScoreColor(sentimentAnalysis.sentimentScore)} 
+          color={getScoreColor(sentimentAnalysis.sentimentScore ?? 50)} 
         />
       </div>
     </div>
