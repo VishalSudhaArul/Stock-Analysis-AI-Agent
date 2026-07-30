@@ -3,11 +3,26 @@ import { getStockData } from "../services/stockService.js";
 import fs from "fs";
 import path from "path";
 
+const FX_RATE_INR = 83.5; // 1 USD = 83.5 INR
+const INDIAN_SYMBOLS = [
+  "IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS",
+  "CUPID", "ZOMATO", "PAYTM", "ITC", "HDFCBANK", "ICICIBANK", "SBIN", "WIPRO"
+];
+
+function isIndianSymbol(symbol, currency) {
+  const sym = (symbol || "").toUpperCase();
+  return (
+    currency === "INR" ||
+    sym.endsWith(".NS") ||
+    sym.includes(":NSE") ||
+    INDIAN_SYMBOLS.includes(sym)
+  );
+}
+
 // Persistent File-backed / In-memory portfolio store
 const STORAGE_FILE = path.resolve("data/memoryPortfolios.json");
 const memoryPortfolios = new Map();
 
-// Helper: Load memory portfolios from disk
 function loadMemoryPortfoliosFromDisk() {
   try {
     const dir = path.dirname(STORAGE_FILE);
@@ -20,14 +35,12 @@ function loadMemoryPortfoliosFromDisk() {
       for (const [key, value] of Object.entries(data)) {
         memoryPortfolios.set(key, value);
       }
-      console.log(`[Portfolio Store] Loaded ${memoryPortfolios.size} persistent portfolios from disk.`);
     }
   } catch (err) {
     console.warn("[Portfolio Store Warning] Could not load portfolios from disk:", err.message);
   }
 }
 
-// Helper: Save memory portfolios to disk
 function saveMemoryPortfoliosToDisk() {
   try {
     const dir = path.dirname(STORAGE_FILE);
@@ -44,7 +57,6 @@ function saveMemoryPortfoliosToDisk() {
   }
 }
 
-// Initialize on module load
 loadMemoryPortfoliosFromDisk();
 
 function getOrCreateMemoryPortfolio(userId) {
@@ -53,7 +65,7 @@ function getOrCreateMemoryPortfolio(userId) {
       id: "port_" + userId,
       userId,
       name: "Default Portfolio",
-      balance: 100000.0,
+      balance: 100000.0, // Stored in USD
       transactions: [],
     });
     saveMemoryPortfoliosToDisk();
@@ -61,25 +73,47 @@ function getOrCreateMemoryPortfolio(userId) {
   return memoryPortfolios.get(userId);
 }
 
-// Helper: Calculate holdings and cost basis from transaction ledger (CHRONOLOGICAL ORDER)
+// Helper: Auto-repair cash balance in USD based on transaction history
+function recalculatePortfolioBalanceUSD(transactions) {
+  let balanceUSD = 100000.0;
+  const sorted = [...transactions].sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+
+  for (const tx of sorted) {
+    const isIndian = isIndianSymbol(tx.symbol, tx.currency);
+    const priceUSD = tx.priceInUSD || (isIndian ? tx.price / FX_RATE_INR : tx.price);
+    const costUSD = tx.shares * priceUSD;
+
+    if (tx.type === "BUY") {
+      balanceUSD -= costUSD;
+    } else if (tx.type === "SELL") {
+      balanceUSD += costUSD;
+    }
+  }
+
+  return Math.max(0, balanceUSD);
+}
+
+// Helper: Calculate holdings and cost basis from transaction ledger in USD
 async function calculatePortfolioHoldingsFromTxList(transactions) {
   const holdingsMap = {};
 
-  // Sort transactions in chronological order (oldest to newest)
   const sortedTransactions = [...transactions].sort(
     (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
   );
 
   for (const tx of sortedTransactions) {
     const symbol = (tx.symbol || "").toUpperCase();
-    const { type, shares, price } = tx;
+    const isIndian = isIndianSymbol(symbol, tx.currency);
+    const priceUSD = tx.priceInUSD || (isIndian ? tx.price / FX_RATE_INR : tx.price);
+    const { type, shares } = tx;
 
     if (!holdingsMap[symbol]) {
       holdingsMap[symbol] = {
         symbol,
         shares: 0,
-        totalCost: 0,
-        averageBuyPrice: 0,
+        totalCostUSD: 0,
+        averageBuyPriceUSD: 0,
+        isIndian,
       };
     }
 
@@ -87,17 +121,17 @@ async function calculatePortfolioHoldingsFromTxList(transactions) {
 
     if (type === "BUY") {
       holding.shares += shares;
-      holding.totalCost += shares * price;
-      holding.averageBuyPrice = holding.shares > 0 ? holding.totalCost / holding.shares : 0;
+      holding.totalCostUSD += shares * priceUSD;
+      holding.averageBuyPriceUSD = holding.shares > 0 ? holding.totalCostUSD / holding.shares : 0;
     } else if (type === "SELL") {
       if (holding.shares > 0) {
         const sharesToSell = Math.min(holding.shares, shares);
         holding.shares -= sharesToSell;
-        holding.totalCost = holding.shares * holding.averageBuyPrice;
+        holding.totalCostUSD = holding.shares * holding.averageBuyPriceUSD;
         if (holding.shares <= 0.0001) {
           holding.shares = 0;
-          holding.totalCost = 0;
-          holding.averageBuyPrice = 0;
+          holding.totalCostUSD = 0;
+          holding.averageBuyPriceUSD = 0;
         }
       }
     }
@@ -117,7 +151,7 @@ export async function getPortfolio(req, res) {
         where: { userId },
         include: {
           transactions: {
-            orderBy: { timestamp: "asc" }, // ALL transactions in ascending order for holdings math
+            orderBy: { timestamp: "asc" },
           },
         },
       });
@@ -138,72 +172,81 @@ export async function getPortfolio(req, res) {
       }
       transactionsList = portfolio.transactions || [];
     } catch (dbErr) {
-      console.warn("[Prisma Database Warning] Cloud DB portfolio fetch failed, using in-memory fallback:", dbErr.message);
+      console.warn("[Prisma Warning] DB portfolio fetch failed, using in-memory fallback:", dbErr.message);
       portfolio = getOrCreateMemoryPortfolio(userId);
       transactionsList = portfolio.transactions || [];
     }
 
+    // Auto-repair cash balance in USD
+    const correctedBalanceUSD = recalculatePortfolioBalanceUSD(transactionsList);
+    portfolio.balance = correctedBalanceUSD;
+
     const holdings = await calculatePortfolioHoldingsFromTxList(transactionsList);
 
-    let totalHoldingsValue = 0;
+    let totalHoldingsValueUSD = 0;
     const holdingsWithPrices = await Promise.all(
       holdings.map(async (holding) => {
-        let currentPrice = holding.averageBuyPrice;
+        let currentPriceLocal = holding.averageBuyPriceUSD * (holding.isIndian ? FX_RATE_INR : 1);
         let changePercent = 0;
         let companyName = "N/A";
-        let fetchedCurrency = null;
+        let fetchedCurrency = holding.isIndian ? "INR" : "USD";
 
         try {
           const stockData = await getStockData(holding.symbol);
           if (stockData) {
-            currentPrice = stockData.currentPrice || holding.averageBuyPrice;
+            currentPriceLocal = stockData.currentPrice || currentPriceLocal;
             companyName = stockData.companyName || "N/A";
-            fetchedCurrency = stockData.currency;
+            fetchedCurrency = stockData.currency || fetchedCurrency;
             if (stockData.currentPrice && stockData.previousClose) {
               changePercent = ((stockData.currentPrice - stockData.previousClose) / stockData.previousClose) * 100;
             }
           }
         } catch (err) {
-          console.warn(`[Price Fetch Fail] Could not get live price for holding ${holding.symbol}:`, err.message);
+          console.warn(`[Price Fetch Fail] ${holding.symbol}:`, err.message);
         }
 
-        const currentValue = holding.shares * currentPrice;
-        const costBasis = holding.shares * holding.averageBuyPrice;
-        const pnl = currentValue - costBasis;
-        const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+        const isIndian = isIndianSymbol(holding.symbol, fetchedCurrency);
+        const currentPriceUSD = isIndian ? currentPriceLocal / FX_RATE_INR : currentPriceLocal;
+        const currentValueUSD = holding.shares * currentPriceUSD;
+        const costBasisUSD = holding.shares * holding.averageBuyPriceUSD;
+        const pnlUSD = currentValueUSD - costBasisUSD;
+        const pnlPercent = costBasisUSD > 0 ? (pnlUSD / costBasisUSD) * 100 : 0;
 
-        totalHoldingsValue += currentValue;
+        totalHoldingsValueUSD += currentValueUSD;
 
-        const isIndianHolding = fetchedCurrency === "INR" || holding.symbol.endsWith(".NS") || holding.symbol.includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC"].includes(holding.symbol.toUpperCase());
+        const avgBuyPriceLocal = isIndian ? holding.averageBuyPriceUSD * FX_RATE_INR : holding.averageBuyPriceUSD;
+        const currentValueLocal = holding.shares * currentPriceLocal;
+        const pnlLocal = isIndian ? pnlUSD * FX_RATE_INR : pnlUSD;
 
         return {
           symbol: holding.symbol,
           companyName,
           shares: parseFloat(holding.shares.toFixed(4)),
-          averageBuyPrice: parseFloat(holding.averageBuyPrice.toFixed(2)),
-          totalCost: parseFloat(costBasis.toFixed(2)),
-          currentPrice: parseFloat(currentPrice.toFixed(2)),
-          currentValue: parseFloat(currentValue.toFixed(2)),
-          pnl: parseFloat(pnl.toFixed(2)),
+          averageBuyPrice: parseFloat(avgBuyPriceLocal.toFixed(2)),
+          averageBuyPriceUSD: parseFloat(holding.averageBuyPriceUSD.toFixed(2)),
+          totalCost: parseFloat((holding.shares * avgBuyPriceLocal).toFixed(2)),
+          totalCostUSD: parseFloat(costBasisUSD.toFixed(2)),
+          currentPrice: parseFloat(currentPriceLocal.toFixed(2)),
+          currentPriceUSD: parseFloat(currentPriceUSD.toFixed(2)),
+          currentValue: parseFloat(currentValueLocal.toFixed(2)),
+          currentValueUSD: parseFloat(currentValueUSD.toFixed(2)),
+          pnl: parseFloat(pnlLocal.toFixed(2)),
+          pnlUSD: parseFloat(pnlUSD.toFixed(2)),
           pnlPercent: parseFloat(pnlPercent.toFixed(2)),
           changePercent: parseFloat(changePercent.toFixed(2)),
-          currency: isIndianHolding ? "INR" : "USD",
+          currency: isIndian ? "INR" : "USD",
         };
       })
     );
 
-    const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
-    const totalPnl = totalHoldingsValue - totalInvested;
-    const totalPnlPercent = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+    const totalInvestedUSD = holdings.reduce((sum, h) => sum + h.totalCostUSD, 0);
+    const totalPnlUSD = totalHoldingsValueUSD - totalInvestedUSD;
+    const totalPnlPercent = totalInvestedUSD > 0 ? (totalPnlUSD / totalInvestedUSD) * 100 : 0;
 
-    const indianSymbolsList = ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC", "HDFCBANK", "ICICIBANK", "SBIN", "WIPRO"];
-
-    // Return recent transactions in reverse chronological order (newest first) for UI display
     const enrichedTransactions = [...transactionsList]
       .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
       .map((tx) => {
-        const sym = (tx.symbol || "").toUpperCase();
-        const isIndian = sym.endsWith(".NS") || sym.includes(":NSE") || indianSymbolsList.includes(sym);
+        const isIndian = isIndianSymbol(tx.symbol, tx.currency);
         return {
           ...tx,
           currency: isIndian ? "INR" : "USD",
@@ -215,11 +258,11 @@ export async function getPortfolio(req, res) {
       data: {
         id: portfolio.id,
         name: portfolio.name,
-        cashBalance: parseFloat(portfolio.balance.toFixed(2)),
-        holdingsValue: parseFloat(totalHoldingsValue.toFixed(2)),
-        totalValue: parseFloat((portfolio.balance + totalHoldingsValue).toFixed(2)),
-        totalInvested: parseFloat(totalInvested.toFixed(2)),
-        totalPnl: parseFloat(totalPnl.toFixed(2)),
+        cashBalance: parseFloat(correctedBalanceUSD.toFixed(2)), // in USD
+        holdingsValue: parseFloat(totalHoldingsValueUSD.toFixed(2)), // in USD
+        totalValue: parseFloat((correctedBalanceUSD + totalHoldingsValueUSD).toFixed(2)), // in USD
+        totalInvested: parseFloat(totalInvestedUSD.toFixed(2)), // in USD
+        totalPnl: parseFloat(totalPnlUSD.toFixed(2)), // in USD
         totalPnlPercent: parseFloat(totalPnlPercent.toFixed(2)),
         holdings: holdingsWithPrices,
         recentTransactions: enrichedTransactions,
@@ -263,8 +306,10 @@ export async function executeTrade(req, res) {
       });
     }
 
-    const marketPrice = stockData.currentPrice;
-    const transactionCost = shares * marketPrice;
+    const marketPriceLocal = stockData.currentPrice;
+    const isIndian = isIndianSymbol(symbol, stockData.currency);
+    const marketPriceUSD = isIndian ? marketPriceLocal / FX_RATE_INR : marketPriceLocal;
+    const transactionCostUSD = shares * marketPriceUSD;
 
     let tradeResult = null;
 
@@ -272,6 +317,7 @@ export async function executeTrade(req, res) {
       tradeResult = await prisma.$transaction(async (tx) => {
         let portfolio = await tx.portfolio.findFirst({
           where: { userId },
+          include: { transactions: true },
         });
 
         if (!portfolio) {
@@ -281,17 +327,23 @@ export async function executeTrade(req, res) {
               name: "Default Portfolio",
               balance: 100000.0,
             },
+            include: { transactions: true },
           });
         }
 
+        const currentBalanceUSD = recalculatePortfolioBalanceUSD(portfolio.transactions || []);
+
         if (tradeType === "BUY") {
-          if (portfolio.balance < transactionCost) {
-            throw new Error(`Insufficient funds. Required: $${transactionCost.toFixed(2)}, Available: $${portfolio.balance.toFixed(2)}`);
+          if (currentBalanceUSD < transactionCostUSD) {
+            const reqDisplay = isIndian ? `₹${(transactionCostUSD * FX_RATE_INR).toFixed(2)} ($${transactionCostUSD.toFixed(2)} USD)` : `$${transactionCostUSD.toFixed(2)} USD`;
+            const availDisplay = `$${currentBalanceUSD.toFixed(2)} USD`;
+            throw new Error(`Insufficient buying power. Required: ${reqDisplay}, Available: ${availDisplay}`);
           }
 
+          const newBalanceUSD = Math.max(0, currentBalanceUSD - transactionCostUSD);
           const updatedPortfolio = await tx.portfolio.update({
             where: { id: portfolio.id },
-            data: { balance: { decrement: transactionCost } },
+            data: { balance: newBalanceUSD },
           });
 
           const newTx = await tx.transaction.create({
@@ -300,15 +352,13 @@ export async function executeTrade(req, res) {
               symbol: symbol.toUpperCase(),
               type: "BUY",
               shares,
-              price: marketPrice,
+              price: marketPriceLocal,
             },
           });
 
           return { portfolio: updatedPortfolio, transaction: newTx };
         } else {
-          const txs = await tx.transaction.findMany({
-            where: { portfolioId: portfolio.id },
-          });
+          const txs = portfolio.transactions || [];
 
           let ownedShares = 0;
           for (const t of txs) {
@@ -322,9 +372,10 @@ export async function executeTrade(req, res) {
             throw new Error(`Insufficient shares of ${symbol.toUpperCase()}. Owned: ${ownedShares}, Attempted trade: ${shares}`);
           }
 
+          const newBalanceUSD = currentBalanceUSD + transactionCostUSD;
           const updatedPortfolio = await tx.portfolio.update({
             where: { id: portfolio.id },
-            data: { balance: { increment: transactionCost } },
+            data: { balance: newBalanceUSD },
           });
 
           const newTx = await tx.transaction.create({
@@ -333,7 +384,7 @@ export async function executeTrade(req, res) {
               symbol: symbol.toUpperCase(),
               type: "SELL",
               shares,
-              price: marketPrice,
+              price: marketPriceLocal,
             },
           });
 
@@ -342,17 +393,21 @@ export async function executeTrade(req, res) {
       });
     } catch (dbErr) {
       if (dbErr.message && dbErr.message.includes("Insufficient")) {
-        throw dbErr; // Rethrow business logic validation errors
+        throw dbErr;
       }
 
-      console.warn("[Prisma Database Warning] Cloud DB transaction failed, using persistent in-memory trade execution fallback:", dbErr.message);
+      console.warn("[Prisma Warning] DB trade execution failed, using persistent in-memory fallback:", dbErr.message);
       const memPort = getOrCreateMemoryPortfolio(userId);
 
+      const currentBalanceUSD = recalculatePortfolioBalanceUSD(memPort.transactions || []);
+
       if (tradeType === "BUY") {
-        if (memPort.balance < transactionCost) {
-          throw new Error(`Insufficient funds. Required: $${transactionCost.toFixed(2)}, Available: $${memPort.balance.toFixed(2)}`);
+        if (currentBalanceUSD < transactionCostUSD) {
+          const reqDisplay = isIndian ? `₹${(transactionCostUSD * FX_RATE_INR).toFixed(2)} ($${transactionCostUSD.toFixed(2)} USD)` : `$${transactionCostUSD.toFixed(2)} USD`;
+          const availDisplay = `$${currentBalanceUSD.toFixed(2)} USD`;
+          throw new Error(`Insufficient buying power. Required: ${reqDisplay}, Available: ${availDisplay}`);
         }
-        memPort.balance -= transactionCost;
+        memPort.balance = currentBalanceUSD - transactionCostUSD;
       } else {
         let ownedShares = 0;
         for (const t of memPort.transactions) {
@@ -364,7 +419,7 @@ export async function executeTrade(req, res) {
         if (ownedShares < shares) {
           throw new Error(`Insufficient shares of ${symbol.toUpperCase()}. Owned: ${ownedShares}, Attempted trade: ${shares}`);
         }
-        memPort.balance += transactionCost;
+        memPort.balance = currentBalanceUSD + transactionCostUSD;
       }
 
       const newTx = {
@@ -373,7 +428,7 @@ export async function executeTrade(req, res) {
         symbol: symbol.toUpperCase(),
         type: tradeType,
         shares,
-        price: marketPrice,
+        price: marketPriceLocal,
         timestamp: new Date().toISOString(),
       };
 
