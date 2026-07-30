@@ -8,27 +8,39 @@ function PortfolioDashboard({ onSearchStock }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tradeModalStock, setTradeModalStock] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchPortfolio = async () => {
+  const fetchPortfolio = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
+      else setIsRefreshing(true);
       setError("");
       const res = await getPortfolioApi();
       if (res && res.success) {
         setPortfolioData(res.data);
+        setLastUpdated(new Date());
       } else {
-        setError(res?.error || res?.message || "Failed to load portfolio data.");
+        if (!silent) setError(res?.error || res?.message || "Failed to load portfolio data.");
       }
     } catch (err) {
       console.error("Fetch portfolio error:", err);
-      setError(err.response?.data?.error || err.response?.data?.message || "Error connecting to portfolio service.");
+      if (!silent) setError(err.response?.data?.error || err.response?.data?.message || "Error connecting to portfolio service.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchPortfolio();
+    fetchPortfolio(false);
+
+    // Live market auto-refresh every 30 seconds
+    const interval = setInterval(() => {
+      fetchPortfolio(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) return <LoadingSpinner />;
@@ -38,7 +50,7 @@ function PortfolioDashboard({ onSearchStock }) {
       <div className="card col-full text-center" style={{ padding: "40px 20px" }}>
         <h3 style={{ color: "var(--negative)", marginBottom: "10px" }}>⚠️ Portfolio Load Error</h3>
         <p style={{ color: "var(--text-secondary)" }}>{error}</p>
-        <button className="search-btn" onClick={fetchPortfolio} style={{ margin: "20px auto 0 auto" }}>
+        <button className="search-btn" onClick={() => fetchPortfolio(false)} style={{ margin: "20px auto 0 auto" }}>
           🔄 Retry Loading
         </button>
       </div>
@@ -59,6 +71,20 @@ function PortfolioDashboard({ onSearchStock }) {
 
   return (
     <div className="portfolio-dashboard-container animate-fade-in-up">
+      {/* Live Market Status Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isRefreshing ? '#F59E0B' : '#10B981', display: 'inline-block', boxShadow: isRefreshing ? '0 0 8px #F59E0B' : '0 0 8px #10B981' }}></span>
+          <span><strong>Live Market Feed</strong> — Syncing every 30s (Last updated: {lastUpdated.toLocaleTimeString()})</span>
+        </div>
+        <button 
+          onClick={() => fetchPortfolio(true)} 
+          disabled={isRefreshing}
+          style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-main)', padding: '4px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          {isRefreshing ? "⏳ Syncing..." : "🔄 Refresh Prices"}
+        </button>
+      </div>
       {/* Top Portfolio KPI Cards */}
       <div className="portfolio-metrics-grid">
         <div className="card metric-card">
