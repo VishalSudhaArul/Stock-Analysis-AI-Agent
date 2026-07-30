@@ -3,6 +3,29 @@ import { getPortfolioApi } from "../services/api";
 import LoadingSpinner from "./LoadingSpinner";
 import TradingModal from "./TradingModal";
 
+const CURRENCY_MAP = {
+  USD: { name: "US Dollar", symbol: "$", flag: "🇺🇸", rate: 1.0 },
+  INR: { name: "Indian Rupee", symbol: "₹", flag: "🇮🇳", rate: 83.5 },
+  EUR: { name: "Euro", symbol: "€", flag: "🇪🇺", rate: 0.92 },
+  GBP: { name: "British Pound", symbol: "£", flag: "🇬🇧", rate: 0.78 },
+  JPY: { name: "Japanese Yen", symbol: "¥", flag: "🇯🇵", rate: 154.2 },
+  CAD: { name: "Canadian Dollar", symbol: "C$", flag: "🇨🇦", rate: 1.37 },
+  AUD: { name: "Australian Dollar", symbol: "A$", flag: "🇦🇺", rate: 1.52 },
+  CHF: { name: "Swiss Franc", symbol: "CHF", flag: "🇨🇭", rate: 0.88 },
+  CNY: { name: "Chinese Yuan", symbol: "¥", flag: "🇨🇳", rate: 7.25 },
+  HKD: { name: "Hong Kong Dollar", symbol: "HK$", flag: "🇭🇰", rate: 7.82 },
+  SGD: { name: "Singapore Dollar", symbol: "S$", flag: "🇸🇬", rate: 1.35 },
+  AED: { name: "UAE Dirham", symbol: "AED", flag: "🇦🇪", rate: 3.67 },
+  SAR: { name: "Saudi Riyal", symbol: "SAR", flag: "🇸🇦", rate: 3.75 },
+  KRW: { name: "South Korean Won", symbol: "₩", flag: "🇰🇷", rate: 1380.0 },
+  BRL: { name: "Brazilian Real", symbol: "R$", flag: "🇧🇷", rate: 5.65 },
+  MXN: { name: "Mexican Peso", symbol: "Mex$", flag: "🇲🇽", rate: 18.5 },
+  RUB: { name: "Russian Ruble", symbol: "₽", flag: "🇷🇺", rate: 86.0 },
+  ZAR: { name: "South African Rand", symbol: "R", flag: "🇿🇦", rate: 18.2 },
+  SEK: { name: "Swedish Krona", symbol: "kr", flag: "🇸🇪", rate: 10.7 },
+  NZD: { name: "New Zealand Dollar", symbol: "NZ$", flag: "🇳🇿", rate: 1.68 },
+};
+
 function PortfolioDashboard({ onSearchStock }) {
   const [portfolioData, setPortfolioData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,9 +33,7 @@ function PortfolioDashboard({ onSearchStock }) {
   const [tradeModalStock, setTradeModalStock] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [displayCurrency, setDisplayCurrency] = useState("USD"); // "USD" or "INR"
-
-  const FX_RATE = 83.5; // 1 USD = 83.5 INR
+  const [displayCurrency, setDisplayCurrency] = useState("USD");
 
   const fetchPortfolio = async (silent = false) => {
     try {
@@ -74,19 +95,21 @@ function PortfolioDashboard({ onSearchStock }) {
     console.warn("Could not parse price alerts:", err.message);
   }
 
-  // Currency conversion calculation (Feature #1)
-  const isINR = displayCurrency === "INR";
-  const curSymbol = isINR ? "₹" : "$";
-  const multiplier = isINR ? FX_RATE : 1;
+  // Multi-Currency conversion calculation (20 Major World Currencies)
+  const activeCurrencyConfig = CURRENCY_MAP[displayCurrency] || CURRENCY_MAP.USD;
+  const curSymbol = activeCurrencyConfig.symbol;
+  const multiplier = activeCurrencyConfig.rate;
 
   // Compute unified holdings value in USD
   const totalHoldingsValueUSD = holdings.reduce((sum, h) => {
-    const valInUSD = h.currency === "INR" ? h.currentValue / FX_RATE : h.currentValue;
+    const isIndian = h.currency === "INR" || h.symbol.endsWith(".NS") || h.symbol.includes(":NSE");
+    const valInUSD = h.currentValueUSD !== undefined ? h.currentValueUSD : (isIndian ? h.currentValue / 83.5 : h.currentValue);
     return sum + valInUSD;
   }, 0);
 
   const totalInvestedUSD = holdings.reduce((sum, h) => {
-    const costInUSD = h.currency === "INR" ? h.totalCost / FX_RATE : h.totalCost;
+    const isIndian = h.currency === "INR" || h.symbol.endsWith(".NS") || h.symbol.includes(":NSE");
+    const costInUSD = h.totalCostUSD !== undefined ? h.totalCostUSD : (isIndian ? h.totalCost / 83.5 : h.totalCost);
     return sum + costInUSD;
   }, 0);
 
@@ -114,7 +137,8 @@ function PortfolioDashboard({ onSearchStock }) {
 
   holdings.forEach((h) => {
     const sec = sectorMap[h.symbol.toUpperCase()] || "Diversified Equities";
-    const valInUSD = h.currency === "INR" ? h.currentValue / FX_RATE : h.currentValue;
+    const isIndian = h.currency === "INR" || h.symbol.endsWith(".NS") || h.symbol.includes(":NSE");
+    const valInUSD = h.currentValueUSD !== undefined ? h.currentValueUSD : (isIndian ? h.currentValue / 83.5 : h.currentValue);
     sectorTotals[sec] = (sectorTotals[sec] || 0) + valInUSD;
 
     const shareOfPort = totalHoldingsValueUSD > 0 ? (valInUSD / totalHoldingsValueUSD) * 100 : 0;
@@ -142,46 +166,38 @@ function PortfolioDashboard({ onSearchStock }) {
 
   return (
     <div className="portfolio-dashboard-container animate-fade-in-up">
-      {/* Live Market Status Bar & Global Currency Aggregation Toggle (Feature #1) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+      {/* Live Market Status Bar & Global 20-Currency Selector Dropdown */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--card-border)', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isRefreshing ? '#F59E0B' : '#10B981', display: 'inline-block', boxShadow: isRefreshing ? '0 0 8px #F59E0B' : '0 0 8px #10B981' }}></span>
           <span><strong>Live Market Feed</strong> — Syncing every 30s ({lastUpdated.toLocaleTimeString()})</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Unified Currency Display Switch */}
-          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '2px' }}>
-            <button
-              onClick={() => setDisplayCurrency("USD")}
+          {/* 20 Major World Currencies Dropdown Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>🌐 Base Currency:</span>
+            <select
+              value={displayCurrency}
+              onChange={(e) => setDisplayCurrency(e.target.value)}
               style={{
-                background: displayCurrency === "USD" ? "var(--accent-primary)" : "transparent",
-                color: displayCurrency === "USD" ? "#fff" : "var(--text-muted)",
-                border: "none",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                cursor: "pointer",
+                background: 'var(--card-bg)',
+                color: 'var(--accent-primary)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                fontSize: '0.85rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                outline: 'none',
               }}
             >
-              🇺🇸 USD ($)
-            </button>
-            <button
-              onClick={() => setDisplayCurrency("INR")}
-              style={{
-                background: displayCurrency === "INR" ? "var(--accent-primary)" : "transparent",
-                color: displayCurrency === "INR" ? "#fff" : "var(--text-muted)",
-                border: "none",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              🇮🇳 INR (₹)
-            </button>
+              {Object.entries(CURRENCY_MAP).map(([code, config]) => (
+                <option key={code} value={code} style={{ background: '#111827', color: '#fff' }}>
+                  {config.flag} {code} ({config.symbol}) — {config.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <button 
