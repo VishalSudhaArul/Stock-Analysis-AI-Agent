@@ -1,8 +1,51 @@
 import prisma from "../utils/prisma.js";
 import { getStockData } from "../services/stockService.js";
+import fs from "fs";
+import path from "path";
 
-// In-memory fallback portfolio store
+// Persistent File-backed / In-memory portfolio store
+const STORAGE_FILE = path.resolve("data/memoryPortfolios.json");
 const memoryPortfolios = new Map();
+
+// Helper: Load memory portfolios from disk
+function loadMemoryPortfoliosFromDisk() {
+  try {
+    const dir = path.dirname(STORAGE_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (fs.existsSync(STORAGE_FILE)) {
+      const raw = fs.readFileSync(STORAGE_FILE, "utf-8");
+      const data = JSON.parse(raw);
+      for (const [key, value] of Object.entries(data)) {
+        memoryPortfolios.set(key, value);
+      }
+      console.log(`[Portfolio Store] Loaded ${memoryPortfolios.size} persistent portfolios from disk.`);
+    }
+  } catch (err) {
+    console.warn("[Portfolio Store Warning] Could not load portfolios from disk:", err.message);
+  }
+}
+
+// Helper: Save memory portfolios to disk
+function saveMemoryPortfoliosToDisk() {
+  try {
+    const dir = path.dirname(STORAGE_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const obj = {};
+    for (const [key, value] of memoryPortfolios.entries()) {
+      obj[key] = value;
+    }
+    fs.writeFileSync(STORAGE_FILE, JSON.stringify(obj, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[Portfolio Store Warning] Could not save portfolios to disk:", err.message);
+  }
+}
+
+// Initialize on module load
+loadMemoryPortfoliosFromDisk();
 
 function getOrCreateMemoryPortfolio(userId) {
   if (!memoryPortfolios.has(userId)) {
@@ -13,16 +56,23 @@ function getOrCreateMemoryPortfolio(userId) {
       balance: 100000.0,
       transactions: [],
     });
+    saveMemoryPortfoliosToDisk();
   }
   return memoryPortfolios.get(userId);
 }
 
-// Helper: Calculate holdings and cost basis from transaction ledger
+// Helper: Calculate holdings and cost basis from transaction ledger (CHRONOLOGICAL ORDER)
 async function calculatePortfolioHoldingsFromTxList(transactions) {
   const holdingsMap = {};
 
-  for (const tx of transactions) {
-    const { symbol, type, shares, price } = tx;
+  // Sort transactions in chronological order (oldest to newest)
+  const sortedTransactions = [...transactions].sort(
+    (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
+  );
+
+  for (const tx of sortedTransactions) {
+    const symbol = (tx.symbol || "").toUpperCase();
+    const { type, shares, price } = tx;
 
     if (!holdingsMap[symbol]) {
       holdingsMap[symbol] = {
@@ -38,20 +88,22 @@ async function calculatePortfolioHoldingsFromTxList(transactions) {
     if (type === "BUY") {
       holding.shares += shares;
       holding.totalCost += shares * price;
-      holding.averageBuyPrice = holding.totalCost / holding.shares;
+      holding.averageBuyPrice = holding.shares > 0 ? holding.totalCost / holding.shares : 0;
     } else if (type === "SELL") {
-      if (holding.shares >= shares) {
-        holding.shares -= shares;
+      if (holding.shares > 0) {
+        const sharesToSell = Math.min(holding.shares, shares);
+        holding.shares -= sharesToSell;
         holding.totalCost = holding.shares * holding.averageBuyPrice;
-      } else {
-        holding.shares = 0;
-        holding.totalCost = 0;
-        holding.averageBuyPrice = 0;
+        if (holding.shares <= 0.0001) {
+          holding.shares = 0;
+          holding.totalCost = 0;
+          holding.averageBuyPrice = 0;
+        }
       }
     }
   }
 
-  return Object.values(holdingsMap).filter((h) => h.shares > 0);
+  return Object.values(holdingsMap).filter((h) => h.shares > 0.0001);
 }
 
 export async function getPortfolio(req, res) {
@@ -65,8 +117,7 @@ export async function getPortfolio(req, res) {
         where: { userId },
         include: {
           transactions: {
-            orderBy: { timestamp: "desc" },
-            take: 20,
+            orderBy: { timestamp: "asc" }, // ALL transactions in ascending order for holdings math
           },
         },
       });
@@ -79,7 +130,9 @@ export async function getPortfolio(req, res) {
             balance: 100000.0,
           },
           include: {
-            transactions: true,
+            transactions: {
+              orderBy: { timestamp: "asc" },
+            },
           },
         });
       }
@@ -126,7 +179,7 @@ export async function getPortfolio(req, res) {
         return {
           symbol: holding.symbol,
           companyName,
-          shares: holding.shares,
+          shares: parseFloat(holding.shares.toFixed(4)),
           averageBuyPrice: parseFloat(holding.averageBuyPrice.toFixed(2)),
           totalCost: parseFloat(costBasis.toFixed(2)),
           currentPrice: parseFloat(currentPrice.toFixed(2)),
@@ -145,14 +198,17 @@ export async function getPortfolio(req, res) {
 
     const indianSymbolsList = ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC", "HDFCBANK", "ICICIBANK", "SBIN", "WIPRO"];
 
-    const enrichedTransactions = transactionsList.map((tx) => {
-      const sym = (tx.symbol || "").toUpperCase();
-      const isIndian = sym.endsWith(".NS") || sym.includes(":NSE") || indianSymbolsList.includes(sym);
-      return {
-        ...tx,
-        currency: isIndian ? "INR" : "USD",
-      };
-    });
+    // Return recent transactions in reverse chronological order (newest first) for UI display
+    const enrichedTransactions = [...transactionsList]
+      .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+      .map((tx) => {
+        const sym = (tx.symbol || "").toUpperCase();
+        const isIndian = sym.endsWith(".NS") || sym.includes(":NSE") || indianSymbolsList.includes(sym);
+        return {
+          ...tx,
+          currency: isIndian ? "INR" : "USD",
+        };
+      });
 
     return res.json({
       success: true,
@@ -285,11 +341,11 @@ export async function executeTrade(req, res) {
         }
       });
     } catch (dbErr) {
-      if (dbErr.message.includes("Insufficient")) {
+      if (dbErr.message && dbErr.message.includes("Insufficient")) {
         throw dbErr; // Rethrow business logic validation errors
       }
 
-      console.warn("[Prisma Database Warning] Cloud DB transaction failed, using in-memory trade execution fallback:", dbErr.message);
+      console.warn("[Prisma Database Warning] Cloud DB transaction failed, using persistent in-memory trade execution fallback:", dbErr.message);
       const memPort = getOrCreateMemoryPortfolio(userId);
 
       if (tradeType === "BUY") {
@@ -321,7 +377,8 @@ export async function executeTrade(req, res) {
         timestamp: new Date().toISOString(),
       };
 
-      memPort.transactions.unshift(newTx);
+      memPort.transactions.push(newTx);
+      saveMemoryPortfoliosToDisk();
       tradeResult = { portfolio: memPort, transaction: newTx };
     }
 
@@ -341,3 +398,4 @@ export async function executeTrade(req, res) {
     });
   }
 }
+
