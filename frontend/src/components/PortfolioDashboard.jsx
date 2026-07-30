@@ -10,6 +10,9 @@ function PortfolioDashboard({ onSearchStock }) {
   const [tradeModalStock, setTradeModalStock] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [displayCurrency, setDisplayCurrency] = useState("USD"); // "USD" or "INR"
+
+  const FX_RATE = 83.5; // 1 USD = 83.5 INR
 
   const fetchPortfolio = async (silent = false) => {
     try {
@@ -59,45 +62,151 @@ function PortfolioDashboard({ onSearchStock }) {
 
   const {
     cashBalance = 100000,
-    totalValue = 100000,
-    holdingsValue = 0,
-    totalPnl = 0,
-    totalPnlPercent = 0,
     holdings = [],
     recentTransactions = [],
   } = portfolioData || {};
 
-  const isProfit = totalPnl >= 0;
+  // Read saved price alerts from localStorage
+  let storedAlerts = {};
+  try {
+    storedAlerts = JSON.parse(localStorage.getItem("stock_price_alerts") || "{}");
+  } catch (err) {
+    console.warn("Could not parse price alerts:", err.message);
+  }
+
+  // Currency conversion calculation (Feature #1)
+  const isINR = displayCurrency === "INR";
+  const curSymbol = isINR ? "₹" : "$";
+  const multiplier = isINR ? FX_RATE : 1;
+
+  // Compute unified holdings value in USD
+  const totalHoldingsValueUSD = holdings.reduce((sum, h) => {
+    const valInUSD = h.currency === "INR" ? h.currentValue / FX_RATE : h.currentValue;
+    return sum + valInUSD;
+  }, 0);
+
+  const totalInvestedUSD = holdings.reduce((sum, h) => {
+    const costInUSD = h.currency === "INR" ? h.totalCost / FX_RATE : h.totalCost;
+    return sum + costInUSD;
+  }, 0);
+
+  const totalValueUSD = cashBalance + totalHoldingsValueUSD;
+  const totalPnlUSD = totalHoldingsValueUSD - totalInvestedUSD;
+  const totalPnlPercent = totalInvestedUSD > 0 ? (totalPnlUSD / totalInvestedUSD) * 100 : 0;
+  const isProfit = totalPnlUSD >= 0;
+
+  // Sector allocation & Risk Score calculation (Feature #2)
+  const sectorMap = {
+    AAPL: "Technology",
+    NVDA: "Technology",
+    INFY: "Technology",
+    TCS: "Technology",
+    CIPLA: "Healthcare",
+    IRFC: "Infrastructure",
+    TATAMOTORS: "Automotive",
+    RELIANCE: "Energy",
+    TSLA: "Automotive",
+  };
+
+  const sectorTotals = {};
+  let maxPositionShare = 0;
+  let maxPositionSymbol = "";
+
+  holdings.forEach((h) => {
+    const sec = sectorMap[h.symbol.toUpperCase()] || "Diversified Equities";
+    const valInUSD = h.currency === "INR" ? h.currentValue / FX_RATE : h.currentValue;
+    sectorTotals[sec] = (sectorTotals[sec] || 0) + valInUSD;
+
+    const shareOfPort = totalHoldingsValueUSD > 0 ? (valInUSD / totalHoldingsValueUSD) * 100 : 0;
+    if (shareOfPort > maxPositionShare) {
+      maxPositionShare = shareOfPort;
+      maxPositionSymbol = h.symbol;
+    }
+  });
+
+  const sectorList = Object.entries(sectorTotals).map(([sec, val]) => ({
+    sector: sec,
+    valueUSD: val,
+    percent: totalHoldingsValueUSD > 0 ? (val / totalHoldingsValueUSD) * 100 : 0,
+  }));
+
+  let riskLevel = "🟢 Low Risk (Balanced)";
+  let riskColor = "var(--positive)";
+  if (maxPositionShare > 50) {
+    riskLevel = `🔴 High Risk (${maxPositionSymbol} ${maxPositionShare.toFixed(0)}% of Holdings)`;
+    riskColor = "var(--negative)";
+  } else if (maxPositionShare > 30) {
+    riskLevel = `🟡 Moderate Risk (${maxPositionSymbol} ${maxPositionShare.toFixed(0)}% Concentration)`;
+    riskColor = "#F59E0B";
+  }
 
   return (
     <div className="portfolio-dashboard-container animate-fade-in-up">
-      {/* Live Market Status Bar */}
+      {/* Live Market Status Bar & Global Currency Aggregation Toggle (Feature #1) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isRefreshing ? '#F59E0B' : '#10B981', display: 'inline-block', boxShadow: isRefreshing ? '0 0 8px #F59E0B' : '0 0 8px #10B981' }}></span>
-          <span><strong>Live Market Feed</strong> — Syncing every 30s (Last updated: {lastUpdated.toLocaleTimeString()})</span>
+          <span><strong>Live Market Feed</strong> — Syncing every 30s ({lastUpdated.toLocaleTimeString()})</span>
         </div>
-        <button 
-          onClick={() => fetchPortfolio(true)} 
-          disabled={isRefreshing}
-          style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-main)', padding: '4px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-        >
-          {isRefreshing ? "⏳ Syncing..." : "🔄 Refresh Prices"}
-        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Unified Currency Display Switch */}
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '2px' }}>
+            <button
+              onClick={() => setDisplayCurrency("USD")}
+              style={{
+                background: displayCurrency === "USD" ? "var(--accent-primary)" : "transparent",
+                color: displayCurrency === "USD" ? "#fff" : "var(--text-muted)",
+                border: "none",
+                borderRadius: "6px",
+                padding: "4px 10px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              🇺🇸 USD ($)
+            </button>
+            <button
+              onClick={() => setDisplayCurrency("INR")}
+              style={{
+                background: displayCurrency === "INR" ? "var(--accent-primary)" : "transparent",
+                color: displayCurrency === "INR" ? "#fff" : "var(--text-muted)",
+                border: "none",
+                borderRadius: "6px",
+                padding: "4px 10px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              🇮🇳 INR (₹)
+            </button>
+          </div>
+
+          <button 
+            onClick={() => fetchPortfolio(true)} 
+            disabled={isRefreshing}
+            style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-main)', padding: '6px 14px', borderRadius: '8px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            {isRefreshing ? "⏳ Syncing..." : "🔄 Refresh Prices"}
+          </button>
+        </div>
       </div>
+
       {/* Top Portfolio KPI Cards */}
       <div className="portfolio-metrics-grid">
         <div className="card metric-card">
-          <span className="metric-card-label">Total Portfolio Value</span>
+          <span className="metric-card-label">Total Portfolio Value ({displayCurrency})</span>
           <span className="metric-card-value">
-            ${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {curSymbol}{(totalValueUSD * multiplier).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         </div>
 
         <div className="card metric-card">
-          <span className="metric-card-label">Available Buying Power</span>
+          <span className="metric-card-label">Available Buying Power ({displayCurrency})</span>
           <span className="metric-card-value" style={{ color: "var(--accent-primary)" }}>
-            ${cashBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {curSymbol}{(cashBalance * multiplier).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         </div>
 
@@ -105,7 +214,7 @@ function PortfolioDashboard({ onSearchStock }) {
           <span className="metric-card-label">Total Return (P&L)</span>
           <div className="pnl-badge-container">
             <span className={`pnl-value ${isProfit ? "diff-up" : "diff-down"}`}>
-              {isProfit ? "+" : ""}${totalPnl.toFixed(2)} ({isProfit ? "+" : ""}{totalPnlPercent.toFixed(2)}%)
+              {isProfit ? "+" : ""}{curSymbol}{(totalPnlUSD * multiplier).toFixed(2)} ({isProfit ? "+" : ""}{totalPnlPercent.toFixed(2)}%)
             </span>
           </div>
         </div>
@@ -116,11 +225,39 @@ function PortfolioDashboard({ onSearchStock }) {
         </div>
       </div>
 
+      {/* Portfolio Sector Allocation & AI Risk Breakdown (Feature #2) */}
+      {holdings && holdings.length > 0 && (
+        <div className="card" style={{ marginBottom: "24px", padding: "20px" }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: "1.1rem", display: 'flex', alignItems: 'center', gap: '8px' }}>
+              📊 Portfolio Diversification & Sector Breakdown
+            </h3>
+            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: riskColor, background: 'rgba(255,255,255,0.04)', padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--card-border)' }}>
+              {riskLevel}
+            </span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+            {sectorList.map((sec) => (
+              <div key={sec.sector}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                  <span>{sec.sector}</span>
+                  <strong>{sec.percent.toFixed(1)}%</strong>
+                </div>
+                <div style={{ width: '100%', height: '8px', background: 'var(--card-border)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(sec.percent, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #3B82F6, #60A5FA)', borderRadius: '4px' }}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Current Holdings Section */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <h2 className="section-title" style={{ margin: 0 }}>📊 Current Stock Holdings</h2>
         <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-          Position Value: <strong>${holdingsValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          Position Value: <strong>{curSymbol}{(totalHoldingsValueUSD * multiplier).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
         </span>
       </div>
 
@@ -144,27 +281,44 @@ function PortfolioDashboard({ onSearchStock }) {
                 const itemPnlPercent = item.pnlPercent ?? 0;
                 const isHoldingProfit = itemPnl >= 0;
                 const isIndian = item.currency === "INR" || item.symbol.endsWith(".NS") || item.symbol.includes(":NSE") || ["IRFC", "CIPLA", "INFY", "TATAMOTORS", "RELIANCE", "TCS", "CUPID", "ZOMATO", "PAYTM", "ITC"].includes(item.symbol.toUpperCase());
-                const currSymbol = isIndian ? "₹" : "$";
+                const holdingSymbol = isIndian ? "₹" : "$";
+
+                // Alert checks (Feature #4)
+                const alert = storedAlerts[item.symbol];
+                const isTargetReached = alert?.targetPrice && item.currentPrice >= alert.targetPrice;
+                const isStopLossTriggered = alert?.stopLoss && item.currentPrice <= alert.stopLoss;
 
                 return (
                   <tr key={item.symbol}>
                     <td>
                       <div>
-                        <strong style={{ color: "var(--accent-primary)", fontSize: "1.05rem" }}>{item.symbol}</strong>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <strong style={{ color: "var(--accent-primary)", fontSize: "1.05rem" }}>{item.symbol}</strong>
+                          {isTargetReached && (
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.2)', color: '#10B981', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
+                              🎯 Target Reached
+                            </span>
+                          )}
+                          {isStopLossTriggered && (
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                              🛑 Stop-Loss Triggered
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{item.companyName}</div>
                       </div>
                     </td>
                     <td><strong style={{ color: "var(--text-primary)" }}>{item.shares}</strong></td>
-                    <td>{currSymbol}{item.averageBuyPrice?.toFixed(2)}</td>
+                    <td>{holdingSymbol}{item.averageBuyPrice?.toFixed(2)}</td>
                     <td>
-                      <span style={{ fontWeight: 600 }}>{currSymbol}{item.currentPrice?.toFixed(2)}</span>
+                      <span style={{ fontWeight: 600 }}>{holdingSymbol}{item.currentPrice?.toFixed(2)}</span>
                     </td>
                     <td>
-                      <strong>{currSymbol}{item.currentValue?.toFixed(2)}</strong>
+                      <strong>{holdingSymbol}{item.currentValue?.toFixed(2)}</strong>
                     </td>
                     <td className={isHoldingProfit ? "diff-up" : "diff-down"}>
                       <span style={{ fontWeight: 600 }}>
-                        {isHoldingProfit ? "+" : ""}{currSymbol}{itemPnl.toFixed(2)} ({isHoldingProfit ? "+" : ""}{itemPnlPercent.toFixed(2)}%)
+                        {isHoldingProfit ? "+" : ""}{holdingSymbol}{itemPnl.toFixed(2)} ({isHoldingProfit ? "+" : ""}{itemPnlPercent.toFixed(2)}%)
                       </span>
                     </td>
                     <td>
@@ -175,6 +329,8 @@ function PortfolioDashboard({ onSearchStock }) {
                         >
                           🔍 Deep Analysis
                         </button>
+                        
+                        {/* Quick Buy Button */}
                         <button
                           className="table-btn"
                           style={{ background: "rgba(59, 130, 246, 0.2)", borderColor: "rgba(59, 130, 246, 0.4)", color: "#60a5fa" }}
@@ -184,10 +340,32 @@ function PortfolioDashboard({ onSearchStock }) {
                               companyName: item.companyName || item.symbol,
                               currentPrice: item.currentPrice,
                               currency: isIndian ? "INR" : "USD",
+                              initialTradeType: "BUY",
+                              initialShares: 1,
+                              maxOwnedShares: item.shares,
                             })
                           }
                         >
-                          ⚡ Trade
+                          ⚡ Buy
+                        </button>
+
+                        {/* Quick Sell Position Button (Requested Feature) */}
+                        <button
+                          className="table-btn"
+                          style={{ background: "rgba(239, 68, 68, 0.2)", borderColor: "rgba(239, 68, 68, 0.4)", color: "#f87171" }}
+                          onClick={() =>
+                            setTradeModalStock({
+                              symbol: item.symbol,
+                              companyName: item.companyName || item.symbol,
+                              currentPrice: item.currentPrice,
+                              currency: isIndian ? "INR" : "USD",
+                              initialTradeType: "SELL",
+                              initialShares: item.shares,
+                              maxOwnedShares: item.shares,
+                            })
+                          }
+                        >
+                          🔴 Sell
                         </button>
                       </div>
                     </td>
@@ -266,6 +444,9 @@ function PortfolioDashboard({ onSearchStock }) {
           currentPrice={tradeModalStock.currentPrice}
           currency={tradeModalStock.currency}
           userBalance={cashBalance}
+          initialTradeType={tradeModalStock.initialTradeType || "BUY"}
+          initialShares={tradeModalStock.initialShares || 1}
+          maxOwnedShares={tradeModalStock.maxOwnedShares || 0}
           onTradeComplete={() => fetchPortfolio()}
         />
       )}

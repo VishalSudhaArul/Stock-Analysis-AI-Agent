@@ -88,6 +88,14 @@ function RecommendationCard({
               🔗 Share AI Report
             </button>
           )}
+
+          <button 
+            className="share-quick-btn" 
+            style={{ background: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10B981' }}
+            onClick={() => window.print()}
+          >
+            📥 Export PDF Report
+          </button>
         </div>
       </div>
     </div>
