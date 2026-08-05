@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 
 function AuthModal({ isOpen, onClose, initialMode = "login" }) {
@@ -10,7 +10,19 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
 
   const { login, signup } = useAuth();
 
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setError("");
+    }
+  }, [isOpen, initialMode]);
+
   if (!isOpen) return null;
+
+  const switchMode = (newMode) => {
+    setMode(newMode);
+    setError("");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,6 +41,7 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
         onClose();
         setEmail("");
         setPassword("");
+        setError("");
       } else {
         setError(res?.error || res?.message || "Authentication failed.");
       }
@@ -73,10 +86,7 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
                   type="button"
                   className="auth-switch-link"
                   style={{ textDecoration: "underline", fontWeight: "bold", cursor: "pointer" }}
-                  onClick={() => {
-                    setError("");
-                    setMode("signup");
-                  }}
+                  onClick={() => switchMode("signup")}
                 >
                   Click here to Create Account
                 </button>
@@ -126,14 +136,14 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
           {mode === "signup" ? (
             <p>
               Already have an account?{" "}
-              <button className="auth-switch-link" onClick={() => setMode("login")}>
+              <button className="auth-switch-link" onClick={() => switchMode("login")}>
                 Sign In
               </button>
             </p>
           ) : (
             <p>
               Don't have an account?{" "}
-              <button className="auth-switch-link" onClick={() => setMode("signup")}>
+              <button className="auth-switch-link" onClick={() => switchMode("signup")}>
                 Create Account
               </button>
             </p>
@@ -145,3 +155,4 @@ function AuthModal({ isOpen, onClose, initialMode = "login" }) {
 }
 
 export default AuthModal;
+
