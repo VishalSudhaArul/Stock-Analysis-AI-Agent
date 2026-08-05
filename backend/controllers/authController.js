@@ -88,29 +88,30 @@ export async function signup(req, res) {
         });
       }
 
-      // 2. Create user and a default $100,000 paper portfolio in MongoDB Atlas DB transaction
-      createdUser = await prisma.$transaction(async (tx) => {
-        const newUser = await tx.user.create({
-          data: {
-            email: cleanEmail,
-            passwordHash,
-          },
-        });
-
-        await tx.portfolio.create({
-          data: {
-            userId: newUser.id,
-            name: "Default Portfolio",
-            balance: 100000.0, // $100,000 starting paper cash
-          },
-        });
-
-        return newUser;
+      // 2. Create user directly in MongoDB Atlas DB
+      createdUser = await prisma.user.create({
+        data: {
+          email: cleanEmail,
+          passwordHash,
+        },
       });
+
+      // Create default $100,000 paper trading portfolio for user
+      try {
+        await prisma.portfolio.create({
+          data: {
+            userId: createdUser.id,
+            name: "Default Portfolio",
+            balance: 100000.0,
+          },
+        });
+      } catch (portErr) {
+        console.warn("[Auth Warning] Portfolio creation error (non-fatal):", portErr.message);
+      }
 
       console.log(`[Auth Success] User registered permanently in MongoDB Atlas: ${cleanEmail} (${createdUser.id})`);
     } catch (dbErr) {
-      console.error("[Auth DB Warning] Primary Cloud DB registration query error:", dbErr.message);
+      console.error("[Auth DB Error] Primary Cloud DB registration query error:", dbErr.message);
 
       // Check local cache
       if (localUsersMap.has(cleanEmail)) {
@@ -121,7 +122,7 @@ export async function signup(req, res) {
         });
       }
 
-      // If DB string is missing or temporary network glitch, create persistent cached user entry
+      // Fallback if DB string is missing or offline
       const fallbackId = "usr_" + Math.random().toString(36).substring(2, 12);
       createdUser = {
         id: fallbackId,
