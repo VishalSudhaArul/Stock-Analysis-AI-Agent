@@ -1,11 +1,50 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import prisma from "../utils/prisma.js";
+import fs from "fs";
+import path from "path";
 
-const JWT_SECRET = process.env.JWT_SECRET || "saas_ai_investment_secret_key_2026_fallback";
+const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_for_stock_ai_agent_2026";
 
-// In-memory fallback storage when cloud DB is unavailable
-const memoryUsers = new Map();
+// Permanent File-backed User Backup Cache for high availability
+const USER_BACKUP_FILE = path.resolve("data/userBackupCache.json");
+const localUsersMap = new Map();
+
+function loadLocalUsersFromDisk() {
+  try {
+    const dir = path.dirname(USER_BACKUP_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (fs.existsSync(USER_BACKUP_FILE)) {
+      const raw = fs.readFileSync(USER_BACKUP_FILE, "utf-8");
+      const data = JSON.parse(raw);
+      for (const [key, value] of Object.entries(data)) {
+        localUsersMap.set(key, value);
+      }
+    }
+  } catch (err) {
+    console.warn("[User Sync Cache Warning] Could not load backup users:", err.message);
+  }
+}
+
+function saveLocalUsersToDisk() {
+  try {
+    const dir = path.dirname(USER_BACKUP_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const obj = {};
+    for (const [key, value] of localUsersMap.entries()) {
+      obj[key] = value;
+    }
+    fs.writeFileSync(USER_BACKUP_FILE, JSON.stringify(obj, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[User Sync Cache Warning] Could not save backup users:", err.message);
+  }
+}
+
+loadLocalUsersFromDisk();
 
 export async function signup(req, res) {
   try {
@@ -19,6 +58,8 @@ export async function signup(req, res) {
       });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
@@ -31,12 +72,12 @@ export async function signup(req, res) {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    let userId = null;
+    let createdUser = null;
 
     try {
-      // 1. Check if user exists in DB
+      // 1. Check if user exists in MongoDB Atlas DB
       const existingUser = await prisma.user.findUnique({
-        where: { email },
+        where: { email: cleanEmail },
       });
 
       if (existingUser) {
@@ -47,11 +88,11 @@ export async function signup(req, res) {
         });
       }
 
-      // 2. Create user and a default portfolio in DB transaction
-      const result = await prisma.$transaction(async (tx) => {
+      // 2. Create user and a default $100,000 paper portfolio in MongoDB Atlas DB transaction
+      createdUser = await prisma.$transaction(async (tx) => {
         const newUser = await tx.user.create({
           data: {
-            email,
+            email: cleanEmail,
             passwordHash,
           },
         });
@@ -60,18 +101,19 @@ export async function signup(req, res) {
           data: {
             userId: newUser.id,
             name: "Default Portfolio",
-            balance: 100000.0, // $100k starting cash
+            balance: 100000.0, // $100,000 starting paper cash
           },
         });
 
         return newUser;
       });
 
-      userId = result.id;
+      console.log(`[Auth Success] User registered permanently in MongoDB Atlas: ${cleanEmail} (${createdUser.id})`);
     } catch (dbErr) {
-      console.warn("[Prisma Database Warning] Cloud DB connection failed, using in-memory session fallback:", dbErr.message);
-      
-      if (memoryUsers.has(email)) {
+      console.error("[Auth DB Warning] Primary Cloud DB registration query error:", dbErr.message);
+
+      // Check local cache
+      if (localUsersMap.has(cleanEmail)) {
         return res.status(400).json({
           success: false,
           error: "User with this email already exists",
@@ -79,27 +121,40 @@ export async function signup(req, res) {
         });
       }
 
-      userId = "usr_" + Math.random().toString(36).substring(2, 10);
-      memoryUsers.set(email, {
-        id: userId,
-        email,
+      // If DB string is missing or temporary network glitch, create persistent cached user entry
+      const fallbackId = "usr_" + Math.random().toString(36).substring(2, 12);
+      createdUser = {
+        id: fallbackId,
+        email: cleanEmail,
         passwordHash,
-      });
+        createdAt: new Date().toISOString(),
+      };
+      localUsersMap.set(cleanEmail, createdUser);
+      saveLocalUsersToDisk();
     }
 
-    // Generate JWT token
+    // Always cache user locally for quick recovery
+    localUsersMap.set(cleanEmail, {
+      id: createdUser.id,
+      email: cleanEmail,
+      passwordHash,
+      createdAt: createdUser.createdAt || new Date().toISOString(),
+    });
+    saveLocalUsersToDisk();
+
+    // Generate JWT token (valid for 30 days for continuous long-term session)
     const token = jwt.sign(
-      { userId, email },
+      { userId: createdUser.id, email: cleanEmail },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "30d" }
     );
 
     return res.status(201).json({
       success: true,
       token,
       user: {
-        id: userId,
-        email,
+        id: createdUser.id,
+        email: cleanEmail,
       },
     });
   } catch (error) {
@@ -124,15 +179,20 @@ export async function login(req, res) {
       });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
     let user = null;
 
     try {
       user = await prisma.user.findUnique({
-        where: { email },
+        where: { email: cleanEmail },
       });
     } catch (dbErr) {
-      console.warn("[Prisma Database Warning] DB query failed, checking in-memory store:", dbErr.message);
-      user = memoryUsers.get(email);
+      console.warn("[Auth DB Warning] DB login query failed, checking local persistent backup cache:", dbErr.message);
+    }
+
+    // Fall back to local persistent backup cache if DB query returned null or failed
+    if (!user) {
+      user = localUsersMap.get(cleanEmail);
     }
 
     if (!user) {
@@ -143,7 +203,7 @@ export async function login(req, res) {
       });
     }
 
-    // Verify password
+    // Verify password match
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
       return res.status(401).json({
@@ -153,11 +213,37 @@ export async function login(req, res) {
       });
     }
 
-    // Generate token
+    // If logged in via cache and DB is available, sync back to DB
+    if (user && user.id && user.id.startsWith("usr_")) {
+      try {
+        const dbUserExists = await prisma.user.findUnique({ where: { email: cleanEmail } });
+        if (!dbUserExists) {
+          const syncedUser = await prisma.$transaction(async (tx) => {
+            const nu = await tx.user.create({
+              data: { email: cleanEmail, passwordHash: user.passwordHash },
+            });
+            await tx.portfolio.create({
+              data: { userId: nu.id, name: "Default Portfolio", balance: 100000.0 },
+            });
+            return nu;
+          });
+          user = syncedUser;
+          localUsersMap.set(cleanEmail, { id: user.id, email: cleanEmail, passwordHash: user.passwordHash });
+          saveLocalUsersToDisk();
+          console.log(`[Auth Sync] Synced backup user ${cleanEmail} to MongoDB Atlas.`);
+        } else {
+          user = dbUserExists;
+        }
+      } catch (syncErr) {
+        console.warn("[Auth Sync Warning] Could not sync backup user to DB:", syncErr.message);
+      }
+    }
+
+    // Generate token (30 days validity)
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id, email: cleanEmail },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "30d" }
     );
 
     return res.json({
@@ -165,7 +251,7 @@ export async function login(req, res) {
       token,
       user: {
         id: user.id,
-        email: user.email,
+        email: cleanEmail,
       },
     });
   } catch (error) {
@@ -180,10 +266,13 @@ export async function login(req, res) {
 
 export async function me(req, res) {
   try {
+    const userId = req.user.userId;
+    const email = (req.user.email || "").toLowerCase().trim();
+
     let user = null;
     try {
       user = await prisma.user.findUnique({
-        where: { id: req.user.userId },
+        where: { id: userId },
         select: {
           id: true,
           email: true,
@@ -191,14 +280,15 @@ export async function me(req, res) {
         },
       });
     } catch (dbErr) {
-      console.warn("[Prisma Database Warning] Get user me DB failed, serving token user:", dbErr.message);
+      console.warn("[Auth DB Warning] Get me DB query failed:", dbErr.message);
     }
 
     if (!user) {
+      const cached = localUsersMap.get(email);
       user = {
-        id: req.user.userId,
-        email: req.user.email,
-        createdAt: new Date().toISOString(),
+        id: cached?.id || userId,
+        email: cached?.email || email,
+        createdAt: cached?.createdAt || new Date().toISOString(),
       };
     }
 
@@ -215,3 +305,4 @@ export async function me(req, res) {
     });
   }
 }
+

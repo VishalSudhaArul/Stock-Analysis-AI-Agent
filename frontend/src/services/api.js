@@ -82,4 +82,20 @@ export const executeTradeApi = async (symbol, type, shares) => {
   return response.data;
 };
 
+// Watchlist APIs
+export const getWatchlistApi = async () => {
+  const response = await API.get("/portfolio/watchlist");
+  return response.data;
+};
+
+export const addToWatchlistApi = async (symbol, companyName) => {
+  const response = await API.post("/portfolio/watchlist", { symbol, companyName });
+  return response.data;
+};
+
+export const removeFromWatchlistApi = async (symbol) => {
+  const response = await API.delete(`/portfolio/watchlist/${encodeURIComponent(symbol)}`);
+  return response.data;
+};
+
 export default API;

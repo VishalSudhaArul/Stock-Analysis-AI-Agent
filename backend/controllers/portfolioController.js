@@ -454,3 +454,195 @@ export async function executeTrade(req, res) {
   }
 }
 
+// Watchlist Controllers (MongoDB Atlas Persistent Storage)
+const WATCHLIST_BACKUP_FILE = path.resolve("data/watchlistBackupCache.json");
+const memoryWatchlists = new Map();
+
+function loadWatchlistsFromDisk() {
+  try {
+    const dir = path.dirname(WATCHLIST_BACKUP_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(WATCHLIST_BACKUP_FILE)) {
+      const raw = fs.readFileSync(WATCHLIST_BACKUP_FILE, "utf-8");
+      const data = JSON.parse(raw);
+      for (const [key, value] of Object.entries(data)) {
+        memoryWatchlists.set(key, value);
+      }
+    }
+  } catch (err) {
+    console.warn("[Watchlist Cache Warning] Could not load watchlist backup:", err.message);
+  }
+}
+
+function saveWatchlistsToDisk() {
+  try {
+    const dir = path.dirname(WATCHLIST_BACKUP_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const obj = {};
+    for (const [key, value] of memoryWatchlists.entries()) {
+      obj[key] = value;
+    }
+    fs.writeFileSync(WATCHLIST_BACKUP_FILE, JSON.stringify(obj, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[Watchlist Cache Warning] Could not save watchlist backup:", err.message);
+  }
+}
+
+loadWatchlistsFromDisk();
+
+export async function getWatchlist(req, res) {
+  try {
+    const userId = req.user.userId;
+    let list = [];
+
+    try {
+      list = await prisma.watchlistItem.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (dbErr) {
+      console.warn("[Watchlist DB Warning] Primary DB fetch failed, using backup cache:", dbErr.message);
+      list = memoryWatchlists.get(userId) || [];
+    }
+
+    // Always keep cache updated
+    memoryWatchlists.set(userId, list);
+    saveWatchlistsToDisk();
+
+    return res.json({
+      success: true,
+      data: list,
+    });
+  } catch (error) {
+    console.error("Get Watchlist Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve watchlist",
+      error: error.message,
+    });
+  }
+}
+
+export async function addToWatchlist(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { symbol, companyName } = req.body;
+
+    if (!symbol) {
+      return res.status(400).json({
+        success: false,
+        message: "Stock symbol is required",
+      });
+    }
+
+    const cleanSymbol = symbol.toUpperCase().trim();
+    const cleanCompany = companyName || cleanSymbol;
+    let item = null;
+
+    try {
+      item = await prisma.watchlistItem.upsert({
+        where: {
+          userId_symbol: {
+            userId,
+            symbol: cleanSymbol,
+          },
+        },
+        update: {
+          companyName: cleanCompany,
+        },
+        create: {
+          userId,
+          symbol: cleanSymbol,
+          companyName: cleanCompany,
+        },
+      });
+    } catch (dbErr) {
+      console.warn("[Watchlist DB Warning] Primary DB upsert failed, saving to backup cache:", dbErr.message);
+      let userList = memoryWatchlists.get(userId) || [];
+      const existingIdx = userList.findIndex((x) => x.symbol === cleanSymbol);
+      item = {
+        id: "w_" + Math.random().toString(36).substring(2, 10),
+        userId,
+        symbol: cleanSymbol,
+        companyName: cleanCompany,
+        createdAt: new Date().toISOString(),
+      };
+
+      if (existingIdx >= 0) {
+        userList[existingIdx] = item;
+      } else {
+        userList.unshift(item);
+      }
+      memoryWatchlists.set(userId, userList);
+      saveWatchlistsToDisk();
+    }
+
+    // Keep cache fresh
+    let currentCache = memoryWatchlists.get(userId) || [];
+    if (!currentCache.some((x) => x.symbol === cleanSymbol)) {
+      currentCache.unshift(item);
+      memoryWatchlists.set(userId, currentCache);
+      saveWatchlistsToDisk();
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `Added ${cleanSymbol} to watchlist`,
+      data: item,
+    });
+  } catch (error) {
+    console.error("Add To Watchlist Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to add stock to watchlist",
+      error: error.message,
+    });
+  }
+}
+
+export async function removeFromWatchlist(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { symbol } = req.params;
+
+    if (!symbol) {
+      return res.status(400).json({
+        success: false,
+        message: "Stock symbol parameter is required",
+      });
+    }
+
+    const cleanSymbol = symbol.toUpperCase().trim();
+
+    try {
+      await prisma.watchlistItem.deleteMany({
+        where: {
+          userId,
+          symbol: cleanSymbol,
+        },
+      });
+    } catch (dbErr) {
+      console.warn("[Watchlist DB Warning] Primary DB delete failed:", dbErr.message);
+    }
+
+    // Remove from backup cache
+    let userList = memoryWatchlists.get(userId) || [];
+    userList = userList.filter((x) => x.symbol !== cleanSymbol);
+    memoryWatchlists.set(userId, userList);
+    saveWatchlistsToDisk();
+
+    return res.json({
+      success: true,
+      message: `Removed ${cleanSymbol} from watchlist`,
+    });
+  } catch (error) {
+    console.error("Remove From Watchlist Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to remove stock from watchlist",
+      error: error.message,
+    });
+  }
+}
+
+

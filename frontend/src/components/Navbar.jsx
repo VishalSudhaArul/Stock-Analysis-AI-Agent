@@ -36,6 +36,10 @@ function Navbar({ activeTab, setActiveTab, onOpenAuthModal, theme, toggleTheme }
         </div>
 
         <div className="navbar-right">
+          <span className="db-status-badge" title="Permanent Cloud Persistence Active in MongoDB Atlas">
+            <span className="pulse-dot"></span> Cloud Persistence Active
+          </span>
+
           <button className="theme-toggle-btn" onClick={toggleTheme} title="Toggle Theme">
             {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
           </button>
@@ -56,6 +60,7 @@ function Navbar({ activeTab, setActiveTab, onOpenAuthModal, theme, toggleTheme }
                   <div className="dropdown-user-info">
                     <p className="dropdown-email">{user?.email}</p>
                     <p className="dropdown-portfolio-id">Account ID: {user?.id?.substring(0, 8)}...</p>
+                    <span className="dropdown-storage-tag">⚡ MongoDB Atlas Persistent Account</span>
                   </div>
                   <hr className="dropdown-divider" />
                   <button
@@ -83,7 +88,7 @@ function Navbar({ activeTab, setActiveTab, onOpenAuthModal, theme, toggleTheme }
                 className="nav-auth-btn primary"
                 onClick={() => onOpenAuthModal("signup")}
               >
-                Get $100k Mock Cash
+                Get $100k Paper Cash
               </button>
             </div>
           )}

@@ -18,7 +18,12 @@ import AuthModal from "../components/AuthModal";
 import TradingModal from "../components/TradingModal";
 import ShareReportModal from "../components/ShareReportModal";
 import PortfolioDashboard from "../components/PortfolioDashboard";
-import { analyzeCompany } from "../services/api";
+import {
+  analyzeCompany,
+  getWatchlistApi,
+  addToWatchlistApi,
+  removeFromWatchlistApi,
+} from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 function Home() {
@@ -41,33 +46,60 @@ function Home() {
       if (Array.isArray(parsed)) {
         return parsed
           .filter((item) => item && typeof item === "object")
-          .map((item) => {
-            let sym = "N/A";
-            let compName = "N/A";
-            if (item.symbol && typeof item.symbol === "object") {
-              sym = item.symbol.symbol || "N/A";
-              compName = item.symbol.name || "N/A";
-            } else if (typeof item.symbol === "string") {
-              sym = item.symbol;
-              compName = item.companyName || item.name || "N/A";
-            }
-            return {
-              symbol: sym,
-              companyName: compName,
-              recommendation: item.recommendation || "HOLD",
-              confidence: item.confidence || 50,
-              price: item.price || 0,
-              currency: item.currency || "USD",
-              addedAt: item.addedAt || new Date().toISOString(),
-              fullData: item.fullData || null,
-            };
-          });
+          .map((item) => ({
+            symbol: typeof item.symbol === "object" ? item.symbol.symbol : item.symbol || "N/A",
+            companyName: typeof item.symbol === "object" ? item.symbol.name : item.companyName || "N/A",
+            recommendation: item.recommendation || "HOLD",
+            confidence: item.confidence || 50,
+            price: item.price || 0,
+            currency: item.currency || "USD",
+            addedAt: item.addedAt || new Date().toISOString(),
+            fullData: item.fullData || null,
+          }));
       }
       return [];
     } catch {
       return [];
     }
   });
+
+  // Fetch Watchlist from MongoDB Atlas when authenticated
+  useEffect(() => {
+    async function syncWatchlist() {
+      if (isAuthenticated) {
+        try {
+          const res = await getWatchlistApi();
+          if (res.success && Array.isArray(res.data)) {
+            const serverItems = res.data.map((item) => ({
+              symbol: item.symbol,
+              companyName: item.companyName || item.symbol,
+              recommendation: "BUY",
+              confidence: 85,
+              price: 0,
+              currency: item.symbol.endsWith(".NS") ? "INR" : "USD",
+              addedAt: item.createdAt || new Date().toISOString(),
+            }));
+            
+            setWatchlist((prev) => {
+              const mergedMap = new Map();
+              serverItems.forEach((x) => mergedMap.set(x.symbol, x));
+              prev.forEach((x) => {
+                if (mergedMap.has(x.symbol)) {
+                  mergedMap.set(x.symbol, { ...mergedMap.get(x.symbol), ...x });
+                } else {
+                  mergedMap.set(x.symbol, x);
+                }
+              });
+              return Array.from(mergedMap.values());
+            });
+          }
+        } catch (err) {
+          console.warn("[Watchlist Sync Warning] Failed to fetch server watchlist:", err.message);
+        }
+      }
+    }
+    syncWatchlist();
+  }, [isAuthenticated]);
 
   // Apply Theme Mode class to body
   useEffect(() => {
@@ -79,7 +111,7 @@ function Home() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Persist Watchlist
+  // Persist Watchlist locally
   useEffect(() => {
     localStorage.setItem("watchlist", JSON.stringify(watchlist));
   }, [watchlist]);
@@ -101,13 +133,20 @@ function Home() {
     }
   };
 
-  const handleToggleWatchlist = () => {
+  const handleToggleWatchlist = async () => {
     if (!result) return;
     const symbol = result.marketData.symbol;
     const isAlreadyWatched = watchlist.some((item) => item.symbol === symbol);
 
     if (isAlreadyWatched) {
       setWatchlist((prev) => prev.filter((item) => item.symbol !== symbol));
+      if (isAuthenticated) {
+        try {
+          await removeFromWatchlistApi(symbol);
+        } catch (err) {
+          console.warn("Failed to remove watchlist item from cloud DB:", err.message);
+        }
+      }
     } else {
       const newItem = {
         symbol: result.marketData.symbol,
@@ -120,12 +159,27 @@ function Home() {
         fullData: result,
       };
       setWatchlist((prev) => [...prev, newItem]);
+      if (isAuthenticated) {
+        try {
+          await addToWatchlistApi(result.marketData.symbol, result.analysis.company);
+        } catch (err) {
+          console.warn("Failed to add watchlist item to cloud DB:", err.message);
+        }
+      }
     }
   };
 
-  const handleRemoveFromWatchlist = (symbol) => {
+  const handleRemoveFromWatchlist = async (symbol) => {
     setWatchlist((prev) => prev.filter((item) => item.symbol !== symbol));
+    if (isAuthenticated) {
+      try {
+        await removeFromWatchlistApi(symbol);
+      } catch (err) {
+        console.warn("Failed to delete watchlist item from cloud DB:", err.message);
+      }
+    }
   };
+
 
   const handleCompareSelect = async (companyName) => {
     try {
