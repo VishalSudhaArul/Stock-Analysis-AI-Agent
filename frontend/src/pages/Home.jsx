@@ -37,7 +37,7 @@ function Home() {
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
 
   const [watchlist, setWatchlist] = useState(() => {
     try {
@@ -63,10 +63,10 @@ function Home() {
     }
   });
 
-  // Fetch Watchlist from MongoDB Atlas when authenticated
+  // Fetch Watchlist from MongoDB Atlas when authenticated user is active
   useEffect(() => {
     async function syncWatchlist() {
-      if (isAuthenticated) {
+      if (isAuthenticated && user) {
         try {
           const res = await getWatchlistApi();
           if (res.success && Array.isArray(res.data)) {
@@ -99,7 +99,7 @@ function Home() {
       }
     }
     syncWatchlist();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user]);
 
   // Apply Theme Mode class to body
   useEffect(() => {

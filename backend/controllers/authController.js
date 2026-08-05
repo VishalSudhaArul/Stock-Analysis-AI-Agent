@@ -198,8 +198,8 @@ export async function login(req, res) {
     if (!user) {
       return res.status(401).json({
         success: false,
-        error: "Invalid email or password",
-        message: "Invalid email or password",
+        error: "No registered account found with this email. Please click 'Create Account' to sign up.",
+        message: "No registered account found with this email. Please click 'Create Account' to sign up.",
       });
     }
 
