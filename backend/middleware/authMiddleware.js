@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "saas_ai_investment_secret_key_2026_fallback";
+const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_for_stock_ai_agent_2026";
+
 
 export default function authMiddleware(req, res, next) {
   try {
