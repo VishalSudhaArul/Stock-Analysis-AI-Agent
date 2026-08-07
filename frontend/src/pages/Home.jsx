@@ -10,6 +10,8 @@ import StockCard from "../components/StockCard";
 import StockChart from "../components/StockChart";
 import NewsCard from "../components/NewsCard";
 import SubAgentInsights from "../components/SubAgentInsights";
+import SmartScoreGauge from "../components/SmartScoreGauge";
+import FundamentalRatiosMatrix from "../components/FundamentalRatiosMatrix";
 import CompareMatrix from "../components/CompareMatrix";
 import Watchlist from "../components/Watchlist";
 import AnalystChat from "../components/AnalystChat";
@@ -277,10 +279,23 @@ function Home() {
                   onOpenShare={() => setIsShareModalOpen(true)}
                 />
 
+                {/* AI 4-Dimensional Composite Smart Score Rating */}
+                <SmartScoreGauge
+                  recommendation={result.analysis}
+                  marketAnalysis={result.marketAnalysis}
+                  sentimentAnalysis={result.sentimentAnalysis}
+                />
+
                 {/* Sub-Agent Insights (Market Analyst + Sentiment Analyst) */}
                 <SubAgentInsights
                   marketAnalysis={result.marketAnalysis}
                   sentimentAnalysis={result.sentimentAnalysis}
+                />
+
+                {/* Institutional Fundamental Ratios & Peer Matrix */}
+                <FundamentalRatiosMatrix
+                  marketData={result.marketData}
+                  currency={result.marketData?.currency || "USD"}
                 />
 
                 <CompanyCard data={result.analysis} />

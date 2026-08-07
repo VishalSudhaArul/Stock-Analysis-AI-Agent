@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getPortfolioApi } from "../services/api";
 import LoadingSpinner from "./LoadingSpinner";
 import TradingModal from "./TradingModal";
+import PaperSIPSimulator from "./PaperSIPSimulator";
 
 const CURRENCY_MAP = {
   USD: { name: "US Dollar", symbol: "$", flag: "🇺🇸", rate: 1.0 },
@@ -268,6 +269,14 @@ function PortfolioDashboard({ onSearchStock }) {
           </div>
         </div>
       )}
+
+      {/* Interactive Paper SIP Simulator & Sector Treemap */}
+      <PaperSIPSimulator
+        holdings={holdings}
+        displayCurrency={displayCurrency}
+        curSymbol={curSymbol}
+        multiplier={multiplier}
+      />
 
       {/* Current Holdings Section */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
