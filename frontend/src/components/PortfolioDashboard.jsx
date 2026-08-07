@@ -3,6 +3,7 @@ import { getPortfolioApi } from "../services/api";
 import LoadingSpinner from "./LoadingSpinner";
 import TradingModal from "./TradingModal";
 import PaperSIPSimulator from "./PaperSIPSimulator";
+import DividendYieldCalculator from "./DividendYieldCalculator";
 import RiskCalculatorModal from "./RiskCalculatorModal";
 
 const CURRENCY_MAP = {
@@ -281,6 +282,14 @@ function PortfolioDashboard({ onSearchStock }) {
 
       {/* Interactive Paper SIP Simulator & Sector Treemap */}
       <PaperSIPSimulator
+        holdings={holdings}
+        displayCurrency={displayCurrency}
+        curSymbol={curSymbol}
+        multiplier={multiplier}
+      />
+
+      {/* Passive Dividend Yield & DRIP Compounding Forecast */}
+      <DividendYieldCalculator
         holdings={holdings}
         displayCurrency={displayCurrency}
         curSymbol={curSymbol}
