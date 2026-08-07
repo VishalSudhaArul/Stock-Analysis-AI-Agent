@@ -1,6 +1,7 @@
 # 🤖 Stock Analysis AI Agent — Enterprise AI Investment SaaS Platform
 
-[![Live Website](https://img.shields.io/badge/Live_Website-v2.0_Active-00C853?style=for-the-badge&logo=vercel)](https://stock-analysis-ai-agent.vercel.app/)
+[![Live Website](https://img.shields.io/badge/Live_Website-v2.5_Active-00C853?style=for-the-badge&logo=vercel)](https://stock-analysis-ai-agent.vercel.app/)
+
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/VishalSudhaArul/Stock-Analysis-AI-Agent)
 [![Node.js](https://img.shields.io/badge/Backend-Node.js_Express-339933?style=for-the-badge&logo=nodedotjs)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/Frontend-React_Vite-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
