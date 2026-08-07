@@ -136,4 +136,10 @@ export const getInsiderAuditApi = async (symbol) => {
   return response.data;
 };
 
-export default API;
+export const calculateDCFApi = async (payload) => {
+  const response = await API.post("/investment/dcf", payload);
+  return response.data;
+};
+
+export default API;
+

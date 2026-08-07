@@ -29,6 +29,7 @@ import MacroEconomicPulse from "../components/MacroEconomicPulse";
 import StrategyBacktester from "../components/StrategyBacktester";
 import SecInsiderAudit from "../components/SecInsiderAudit";
 import AutoTradingRules from "../components/AutoTradingRules";
+import DCFValuationCalculator from "../components/DCFValuationCalculator";
 import {
   analyzeCompany,
   getWatchlistApi,
@@ -36,6 +37,7 @@ import {
   removeFromWatchlistApi,
 } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+
 
 function Home() {
   const [activeTab, setActiveTab] = useState("research"); // 'research' or 'portfolio'
@@ -307,11 +309,15 @@ function Home() {
                 {/* SEC 10-K & C-Suite Insider Audit Tracker */}
                 <SecInsiderAudit symbol={result.marketData?.symbol} />
 
+                {/* DCF Intrinsic Fair Value Model */}
+                <DCFValuationCalculator marketData={result.marketData} />
+
                 {/* Institutional Fundamental Ratios & Peer Matrix */}
                 <FundamentalRatiosMatrix
                   marketData={result.marketData}
                   currency={result.marketData?.currency || "USD"}
                 />
+
 
                 <CompanyCard data={result.analysis} />
 

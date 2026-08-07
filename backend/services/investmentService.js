@@ -344,4 +344,80 @@ export async function getSecInsiderAudit(symbol = "AAPL") {
       "Debt maturity profile is comfortably spread out beyond 2029.",
     ],
   };
-}
+}
+
+export async function calculateDCF({
+  symbol = "AAPL",
+  fcf = 100, // Free Cash Flow in Billions or Millions
+  fcfGrowth = 12, // 12% per year for 5 years
+  discountRate = 9, // WACC %
+  terminalRate = 2.5, // Perpetual Growth %
+  sharesOutstanding = 15.5, // Shares in Billions
+  currentPrice = 220,
+  currency = "USD",
+}) {
+  const cleanSym = symbol.toUpperCase();
+  const g = fcfGrowth / 100;
+  const r = discountRate / 100;
+  const gTerm = terminalRate / 100;
+
+  let currentFCF = fcf;
+  let sumDiscountedFCF = 0;
+  const projectedYears = [];
+
+  for (let year = 1; year <= 5; year++) {
+    currentFCF = currentFCF * (1 + g);
+    const discountFactor = Math.pow(1 + r, year);
+    const discountedFCF = currentFCF / discountFactor;
+    sumDiscountedFCF += discountedFCF;
+    projectedYears.push({
+      year: `Year ${year}`,
+      fcf: currentFCF.toFixed(2),
+      discountedFCF: discountedFCF.toFixed(2),
+    });
+  }
+
+  // Terminal Value using Gordon Growth Model
+  const terminalValue = (currentFCF * (1 + gTerm)) / Math.max(0.01, r - gTerm);
+  const discountedTerminalValue = terminalValue / Math.pow(1 + r, 5);
+
+  const totalEnterpriseValue = sumDiscountedFCF + discountedTerminalValue;
+  const fairValuePerShare = sharesOutstanding > 0 ? totalEnterpriseValue / sharesOutstanding : currentPrice;
+
+  const upsidePct = currentPrice > 0 ? ((fairValuePerShare - currentPrice) / currentPrice) * 100 : 0;
+
+  // Scenarios
+  const bearFairValue = fairValuePerShare * 0.82;
+  const bullFairValue = fairValuePerShare * 1.25;
+
+  let valuationStance = "FAIRLY VALUED";
+  if (upsidePct > 15) valuationStance = "UNDERVALUED (BUY)";
+  else if (upsidePct < -15) valuationStance = "OVERVALUED (SELL)";
+
+  return {
+    symbol: cleanSym,
+    currency: currency === "INR" ? "INR" : "USD",
+    currencySymbol: currency === "INR" ? "₹" : "$",
+    inputs: {
+      fcf,
+      fcfGrowth,
+      discountRate,
+      terminalRate,
+      sharesOutstanding,
+      currentPrice,
+    },
+    fairValuePerShare: Number(fairValuePerShare.toFixed(2)),
+    currentPrice: Number(currentPrice.toFixed(2)),
+    upsidePct: Number(upsidePct.toFixed(1)),
+    valuationStance,
+    scenarios: {
+      bear: Number(bearFairValue.toFixed(2)),
+      base: Number(fairValuePerShare.toFixed(2)),
+      bull: Number(bullFairValue.toFixed(2)),
+    },
+    projectedYears,
+    enterpriseValue: Number(totalEnterpriseValue.toFixed(2)),
+    discountedTerminalValue: Number(discountedTerminalValue.toFixed(2)),
+  };
+}
+

@@ -5,7 +5,9 @@ import {
   getMacroData,
   runBacktest,
   getSecInsiderAudit,
+  calculateDCF,
 } from "../services/investmentService.js";
+
 
 export async function analyze(req, res) {
   try {
@@ -111,19 +113,29 @@ export async function postBacktest(req, res) {
   }
 }
 
-export async function getInsiderAudit(req, res) {
+import {
+  analyzeInvestment,
+  chatWithAnalyst,
+  getScreenerData,
+  getMacroData,
+  runBacktest,
+  getSecInsiderAudit,
+  calculateDCF,
+} from "../services/investmentService.js";
+
+export async function postDCFValuation(req, res) {
   try {
-    const symbol = req.query.symbol || "AAPL";
-    const data = await getSecInsiderAudit(symbol);
+    const data = await calculateDCF(req.body || {});
     res.json({
       success: true,
       data,
     });
   } catch (error) {
-    console.error("Insider Audit Controller Error:", error);
+    console.error("DCF Valuation Controller Error:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "Failed to fetch insider audit",
+      error: error.message || "Failed to calculate DCF valuation",
     });
   }
-}
+}
+

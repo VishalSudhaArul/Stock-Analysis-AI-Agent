@@ -6,6 +6,7 @@ import {
   getMacro,
   postBacktest,
   getInsiderAudit,
+  postDCFValuation,
 } from "../controllers/investmentController.js";
 
 const router = express.Router();
@@ -16,5 +17,7 @@ router.get("/screener", getScreener);
 router.get("/macro", getMacro);
 router.post("/backtest", postBacktest);
 router.get("/insider-audit", getInsiderAudit);
+router.post("/dcf", postDCFValuation);
 
-export default router;
+export default router;
+
