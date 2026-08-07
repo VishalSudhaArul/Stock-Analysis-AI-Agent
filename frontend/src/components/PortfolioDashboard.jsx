@@ -3,6 +3,7 @@ import { getPortfolioApi } from "../services/api";
 import LoadingSpinner from "./LoadingSpinner";
 import TradingModal from "./TradingModal";
 import PaperSIPSimulator from "./PaperSIPSimulator";
+import RiskCalculatorModal from "./RiskCalculatorModal";
 
 const CURRENCY_MAP = {
   USD: { name: "US Dollar", symbol: "$", flag: "🇺🇸", rate: 1.0 },
@@ -35,6 +36,7 @@ function PortfolioDashboard({ onSearchStock }) {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState("USD");
+  const [isRiskModalOpen, setIsRiskModalOpen] = useState(false);
 
   const fetchPortfolio = async (silent = false) => {
     try {
@@ -200,6 +202,13 @@ function PortfolioDashboard({ onSearchStock }) {
               ))}
             </select>
           </div>
+
+          <button 
+            onClick={() => setIsRiskModalOpen(true)}
+            style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#EF4444', padding: '6px 14px', borderRadius: '8px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
+          >
+            🛡️ Risk & VaR Model
+          </button>
 
           <button 
             onClick={() => fetchPortfolio(true)} 
@@ -475,6 +484,14 @@ function PortfolioDashboard({ onSearchStock }) {
           onTradeComplete={() => fetchPortfolio()}
         />
       )}
+
+      {/* Institutional Risk Calculator Modal */}
+      <RiskCalculatorModal
+        isOpen={isRiskModalOpen}
+        onClose={() => setIsRiskModalOpen(false)}
+        portfolioValue={totalValueUSD * multiplier}
+        holdingsCount={holdings ? holdings.length : 0}
+      />
     </div>
   );
 }

@@ -21,6 +21,9 @@ import TradingModal from "../components/TradingModal";
 import ShareReportModal from "../components/ShareReportModal";
 import ExportReportModal from "../components/ExportReportModal";
 import StockScreener from "../components/StockScreener";
+import EarningsCalendar from "../components/EarningsCalendar";
+import MarketIndicesTicker from "../components/MarketIndicesTicker";
+import CryptoForexTicker from "../components/CryptoForexTicker";
 import PortfolioDashboard from "../components/PortfolioDashboard";
 import {
   analyzeCompany,
@@ -236,6 +239,7 @@ function Home() {
         theme={theme}
         toggleTheme={toggleTheme}
       />
+      <MarketIndicesTicker />
 
       <div className="container">
         {/* Floating Toolbar */}
@@ -354,6 +358,12 @@ function Home() {
 
             {/* Institutional Stock Screener */}
             <StockScreener onSearchStock={handleSearch} />
+
+            {/* Corporate Earnings & Dividend Calendar */}
+            <EarningsCalendar onSearchStock={handleSearch} />
+
+            {/* Multi-Asset Class Intel (Crypto & Forex Rates) */}
+            <CryptoForexTicker onSearchStock={handleSearch} />
 
             {/* Watchlist Section */}
             <Watchlist
