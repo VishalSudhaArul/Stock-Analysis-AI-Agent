@@ -314,83 +314,81 @@ export async function executeTrade(req, res) {
     let tradeResult = null;
 
     try {
-      tradeResult = await prisma.$transaction(async (tx) => {
-        let portfolio = await tx.portfolio.findFirst({
-          where: { userId },
+      let portfolio = await prisma.portfolio.findFirst({
+        where: { userId },
+        include: { transactions: true },
+      });
+
+      if (!portfolio) {
+        portfolio = await prisma.portfolio.create({
+          data: {
+            userId,
+            name: "Default Portfolio",
+            balance: 100000.0,
+          },
           include: { transactions: true },
         });
+      }
 
-        if (!portfolio) {
-          portfolio = await tx.portfolio.create({
-            data: {
-              userId,
-              name: "Default Portfolio",
-              balance: 100000.0,
-            },
-            include: { transactions: true },
-          });
+      const currentBalanceUSD = recalculatePortfolioBalanceUSD(portfolio.transactions || []);
+
+      if (tradeType === "BUY") {
+        if (currentBalanceUSD < transactionCostUSD) {
+          const reqDisplay = isIndian ? `₹${(transactionCostUSD * FX_RATE_INR).toFixed(2)} ($${transactionCostUSD.toFixed(2)} USD)` : `$${transactionCostUSD.toFixed(2)} USD`;
+          const availDisplay = `$${currentBalanceUSD.toFixed(2)} USD`;
+          throw new Error(`Insufficient buying power. Required: ${reqDisplay}, Available: ${availDisplay}`);
         }
 
-        const currentBalanceUSD = recalculatePortfolioBalanceUSD(portfolio.transactions || []);
+        const newBalanceUSD = Math.max(0, currentBalanceUSD - transactionCostUSD);
+        const updatedPortfolio = await prisma.portfolio.update({
+          where: { id: portfolio.id },
+          data: { balance: newBalanceUSD },
+        });
 
-        if (tradeType === "BUY") {
-          if (currentBalanceUSD < transactionCostUSD) {
-            const reqDisplay = isIndian ? `₹${(transactionCostUSD * FX_RATE_INR).toFixed(2)} ($${transactionCostUSD.toFixed(2)} USD)` : `$${transactionCostUSD.toFixed(2)} USD`;
-            const availDisplay = `$${currentBalanceUSD.toFixed(2)} USD`;
-            throw new Error(`Insufficient buying power. Required: ${reqDisplay}, Available: ${availDisplay}`);
+        const newTx = await prisma.transaction.create({
+          data: {
+            portfolioId: portfolio.id,
+            symbol: symbol.toUpperCase(),
+            type: "BUY",
+            shares,
+            price: marketPriceLocal,
+          },
+        });
+
+        tradeResult = { portfolio: updatedPortfolio, transaction: newTx };
+      } else {
+        const txs = portfolio.transactions || [];
+
+        let ownedShares = 0;
+        for (const t of txs) {
+          if (t.symbol === symbol.toUpperCase()) {
+            if (t.type === "BUY") ownedShares += t.shares;
+            else if (t.type === "SELL") ownedShares -= t.shares;
           }
-
-          const newBalanceUSD = Math.max(0, currentBalanceUSD - transactionCostUSD);
-          const updatedPortfolio = await tx.portfolio.update({
-            where: { id: portfolio.id },
-            data: { balance: newBalanceUSD },
-          });
-
-          const newTx = await tx.transaction.create({
-            data: {
-              portfolioId: portfolio.id,
-              symbol: symbol.toUpperCase(),
-              type: "BUY",
-              shares,
-              price: marketPriceLocal,
-            },
-          });
-
-          return { portfolio: updatedPortfolio, transaction: newTx };
-        } else {
-          const txs = portfolio.transactions || [];
-
-          let ownedShares = 0;
-          for (const t of txs) {
-            if (t.symbol === symbol.toUpperCase()) {
-              if (t.type === "BUY") ownedShares += t.shares;
-              else if (t.type === "SELL") ownedShares -= t.shares;
-            }
-          }
-
-          if (ownedShares < shares) {
-            throw new Error(`Insufficient shares of ${symbol.toUpperCase()}. Owned: ${ownedShares}, Attempted trade: ${shares}`);
-          }
-
-          const newBalanceUSD = currentBalanceUSD + transactionCostUSD;
-          const updatedPortfolio = await tx.portfolio.update({
-            where: { id: portfolio.id },
-            data: { balance: newBalanceUSD },
-          });
-
-          const newTx = await tx.transaction.create({
-            data: {
-              portfolioId: portfolio.id,
-              symbol: symbol.toUpperCase(),
-              type: "SELL",
-              shares,
-              price: marketPriceLocal,
-            },
-          });
-
-          return { portfolio: updatedPortfolio, transaction: newTx };
         }
-      });
+
+        if (ownedShares < shares) {
+          throw new Error(`Insufficient shares of ${symbol.toUpperCase()}. Owned: ${ownedShares}, Attempted trade: ${shares}`);
+        }
+
+        const newBalanceUSD = currentBalanceUSD + transactionCostUSD;
+        const updatedPortfolio = await prisma.portfolio.update({
+          where: { id: portfolio.id },
+          data: { balance: newBalanceUSD },
+        });
+
+        const newTx = await prisma.transaction.create({
+          data: {
+            portfolioId: portfolio.id,
+            symbol: symbol.toUpperCase(),
+            type: "SELL",
+            shares,
+            price: marketPriceLocal,
+          },
+        });
+
+        tradeResult = { portfolio: updatedPortfolio, transaction: newTx };
+      }
     } catch (dbErr) {
       if (dbErr.message && dbErr.message.includes("Insufficient")) {
         throw dbErr;
