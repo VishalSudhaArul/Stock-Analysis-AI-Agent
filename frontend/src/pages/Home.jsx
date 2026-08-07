@@ -25,6 +25,10 @@ import EarningsCalendar from "../components/EarningsCalendar";
 import MarketIndicesTicker from "../components/MarketIndicesTicker";
 import CryptoForexTicker from "../components/CryptoForexTicker";
 import PortfolioDashboard from "../components/PortfolioDashboard";
+import MacroEconomicPulse from "../components/MacroEconomicPulse";
+import StrategyBacktester from "../components/StrategyBacktester";
+import SecInsiderAudit from "../components/SecInsiderAudit";
+import AutoTradingRules from "../components/AutoTradingRules";
 import {
   analyzeCompany,
   getWatchlistApi,
@@ -300,6 +304,9 @@ function Home() {
                   sentimentAnalysis={result.sentimentAnalysis}
                 />
 
+                {/* SEC 10-K & C-Suite Insider Audit Tracker */}
+                <SecInsiderAudit symbol={result.marketData?.symbol} />
+
                 {/* Institutional Fundamental Ratios & Peer Matrix */}
                 <FundamentalRatiosMatrix
                   marketData={result.marketData}
@@ -356,6 +363,15 @@ function Home() {
               </div>
             )}
 
+            {/* Macroeconomic Strategist Agent */}
+            <MacroEconomicPulse />
+
+            {/* AI Quant Backtester & Strategy Simulator */}
+            <StrategyBacktester />
+
+            {/* Automated Trading Rules & Webhook Signals */}
+            <AutoTradingRules />
+
             {/* Institutional Stock Screener */}
             <StockScreener onSearchStock={handleSearch} />
 
@@ -373,6 +389,7 @@ function Home() {
             />
           </>
         )}
+
 
         {/* Floating Analyst Chat */}
         <AnalystChat currentResult={result} />

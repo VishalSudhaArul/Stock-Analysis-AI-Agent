@@ -1,4 +1,11 @@
-import { analyzeInvestment, chatWithAnalyst, getScreenerData } from "../services/investmentService.js";
+import {
+  analyzeInvestment,
+  chatWithAnalyst,
+  getScreenerData,
+  getMacroData,
+  runBacktest,
+  getSecInsiderAudit,
+} from "../services/investmentService.js";
 
 export async function analyze(req, res) {
   try {
@@ -70,3 +77,53 @@ export async function getScreener(req, res) {
     });
   }
 }
+
+export async function getMacro(req, res) {
+  try {
+    const data = await getMacroData();
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Macro Controller Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fetch macro data",
+    });
+  }
+}
+
+export async function postBacktest(req, res) {
+  try {
+    const { strategy, timeframe } = req.body;
+    const data = await runBacktest(strategy, timeframe);
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Backtest Controller Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to run backtest",
+    });
+  }
+}
+
+export async function getInsiderAudit(req, res) {
+  try {
+    const symbol = req.query.symbol || "AAPL";
+    const data = await getSecInsiderAudit(symbol);
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error("Insider Audit Controller Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fetch insider audit",
+    });
+  }
+}

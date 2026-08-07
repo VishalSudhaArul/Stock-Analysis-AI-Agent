@@ -120,4 +120,20 @@ export const removeFromWatchlistApi = async (symbol) => {
   return response.data;
 };
 
-export default API;
+// Macro, Quant Backtesting & Insider Audit APIs
+export const getMacroApi = async () => {
+  const response = await API.get("/investment/macro");
+  return response.data;
+};
+
+export const runBacktestApi = async (strategy, timeframe) => {
+  const response = await API.post("/investment/backtest", { strategy, timeframe });
+  return response.data;
+};
+
+export const getInsiderAuditApi = async (symbol) => {
+  const response = await API.get(`/investment/insider-audit?symbol=${encodeURIComponent(symbol || "AAPL")}`);
+  return response.data;
+};
+
+export default API;
