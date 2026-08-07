@@ -89,11 +89,17 @@ Real-Time Market Data Engine          Multi-Agent AI Pipeline (LangGraph)       
 - **Chronological Accounting Engine**: Computes weighted average buy prices and active stock positions chronologically (oldest-to-newest), preventing position loss or false zero-share states.
 - **Persistent JSON & Cloud Storage**: Portfolio balances and transaction ledgers persist seamlessly via **Prisma MongoDB Atlas** and a local JSON file-backed ledger (`backend/data/memoryPortfolios.json`).
 
-### 4. 🤖 Interactive AI Features & RAG Chat
+### 4. 🤖 Institutional AI Features & Quantitative Modules
+- **🌐 Macroeconomic Strategist Agent (`MacroEconomicPulse.jsx`)**: Real-time Federal Reserve monetary policy metrics, CPI inflation, 10Y yields, and AI sector allocation matrix.
+- **📈 AI Quant Backtester & Strategy Simulator (`StrategyBacktester.jsx`)**: Multi-factor Monte Carlo backtesting engine for AI Sentiment Momentum, Buffett Deep Value, Dividend Compounder, and Volatility Breakout.
+- **🧮 DCF Intrinsic Fair Value Model (`DCFValuationCalculator.jsx`)**: Discounted Cash Flow 5-year valuation calculator with customizable WACC, FCF growth rate, and Bear/Base/Bull target scenarios.
+- **🕵️‍♂️ SEC 10-K & C-Suite Insider Audit Tracker (`SecInsiderAudit.jsx`)**: Form 4 insider trading log (CEO/CFO actions), institutional ownership %, and 10-K audit health score.
+- **⚡ Automated Trading Rules & Webhook Signals (`AutoTradingRules.jsx`)**: Conditional execution engine for automated stop-loss, RSI accumulation, and sentiment triggers.
 - **Speedometer Health Gauges**: Visual SVG gauge meters displaying Financial Health Score and Sentiment Stance.
 - **Multi-Turn RAG Chat Assistant (`AnalystChat.jsx`)**: Contextual follow-up Q&A directly with the AI Investment Agent for deep-dive earnings analysis.
 - **Side-by-Side Stock Comparison Matrix (`CompareMatrix.jsx`)**: Compare active stock analysis against watchlist items across 10+ financial metrics.
 - **Viral Public Report Publishing**: Share institutional-quality AI analysis reports via public URLs (`/reports/:shareId`) with cached model responses and live market updates.
+
 
 ---
 
