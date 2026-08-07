@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/Frontend-React_Vite-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
 [![LangGraph](https://img.shields.io/badge/AI_Engine-LangGraph_Gemini-FF6F00?style=for-the-badge&logo=google)](https://langchain.com/)
 
-> **Stock Analysis AI Agent** is an enterprise-grade AI Investment Research & Paper Trading SaaS platform. It combines a stateful multi-agent AI engine (**LangGraph** + **Google Gemini**), real-time market scrapers, multi-currency detection (INR ₹ / USD $), and an interactive paper trading desk with zero-latency symbol resolution and persistent portfolio ledgers.
+> **Stock Analysis AI Agent** is an enterprise-grade AI Investment Research & Paper Trading SaaS platform. It combines a stateful multi-agent AI engine (**LangGraph** + **Google Gemini**), real-time market scrapers, multi-currency detection (INR ₹ / USD $), interactive paper trading desk with zero-latency symbol resolution, and passive dividend yield & DRIP compounding forecaster.
 
 ---
 
