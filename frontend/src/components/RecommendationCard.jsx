@@ -5,6 +5,7 @@ function RecommendationCard({
   onToggleWatchlist,
   onOpenTrade,
   onOpenShare,
+  onOpenExport,
 }) {
   const recLower = recommendation ? recommendation.toLowerCase() : "hold";
   let colorClass = "rec-buy";
@@ -92,9 +93,9 @@ function RecommendationCard({
           <button 
             className="share-quick-btn" 
             style={{ background: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10B981' }}
-            onClick={() => window.print()}
+            onClick={onOpenExport || (() => window.print())}
           >
-            📥 Export PDF Report
+            📥 Export PDF / CSV Report
           </button>
         </div>
       </div>

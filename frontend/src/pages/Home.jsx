@@ -19,6 +19,8 @@ import Navbar from "../components/Navbar";
 import AuthModal from "../components/AuthModal";
 import TradingModal from "../components/TradingModal";
 import ShareReportModal from "../components/ShareReportModal";
+import ExportReportModal from "../components/ExportReportModal";
+import StockScreener from "../components/StockScreener";
 import PortfolioDashboard from "../components/PortfolioDashboard";
 import {
   analyzeCompany,
@@ -38,6 +40,7 @@ function Home() {
   const [authModal, setAuthModal] = useState({ isOpen: false, mode: "login" });
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const { user, isAuthenticated } = useAuth();
 
@@ -277,6 +280,7 @@ function Home() {
                   onToggleWatchlist={handleToggleWatchlist}
                   onOpenTrade={handleOpenTrade}
                   onOpenShare={() => setIsShareModalOpen(true)}
+                  onOpenExport={() => setIsExportModalOpen(true)}
                 />
 
                 {/* AI 4-Dimensional Composite Smart Score Rating */}
@@ -348,6 +352,9 @@ function Home() {
               </div>
             )}
 
+            {/* Institutional Stock Screener */}
+            <StockScreener onSearchStock={handleSearch} />
+
             {/* Watchlist Section */}
             <Watchlist
               watchlist={watchlist}
@@ -387,6 +394,15 @@ function Home() {
           isOpen={isShareModalOpen}
           onClose={() => setIsShareModalOpen(false)}
           currentResult={result}
+        />
+      )}
+
+      {/* Export Report Modal */}
+      {result && (
+        <ExportReportModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          result={result}
         />
       )}
     </>
