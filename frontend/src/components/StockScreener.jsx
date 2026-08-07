@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { getScreenerApi } from "../services/api";
 
-const SCREENER_STOCKS = [
+const INITIAL_STOCKS = [
   { symbol: "AAPL", name: "Apple Inc.", sector: "Technology", pe: "30.5", roe: "147%", score: 88, stance: "UNDERVALUED", price: "$224.50" },
   { symbol: "NVDA", name: "NVIDIA Corp.", sector: "Technology", pe: "68.2", roe: "115%", score: 94, stance: "HIGH GROWTH", price: "$128.20" },
   { symbol: "MSFT", name: "Microsoft Corp.", sector: "Technology", pe: "34.8", roe: "38.5%", score: 86, stance: "FAIRLY VALUED", price: "$445.10" },
@@ -14,11 +15,35 @@ const SCREENER_STOCKS = [
 ];
 
 function StockScreener({ onSearchStock }) {
+  const [screenerData, setScreenerData] = useState(INITIAL_STOCKS);
   const [selectedSector, setSelectedSector] = useState("ALL");
   const [minScore, setMinScore] = useState(80);
   const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState("Daily Market Sync • Active");
 
-  const filteredStocks = SCREENER_STOCKS.filter((stock) => {
+  const fetchLiveScreener = async (force = false) => {
+    setLoading(true);
+    try {
+      const res = await getScreenerApi(force);
+      if (res?.success && res?.data?.stocks) {
+        setScreenerData(res.data.stocks);
+        if (res.data.lastUpdated) {
+          setLastUpdated(`Daily Sync: ${res.data.lastUpdated}`);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch live screener data, using cached fallback:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveScreener(false);
+  }, []);
+
+  const filteredStocks = screenerData.filter((stock) => {
     const matchesSector = selectedSector === "ALL" || stock.sector === selectedSector;
     const matchesScore = stock.score >= minScore;
     const matchesSearch =
@@ -35,12 +60,22 @@ function StockScreener({ onSearchStock }) {
             🎯 Institutional Stock Screener
           </h2>
           <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-            Filter stocks by AI Smart Score, sector fundamentals, and valuation signals
+            Filter stocks by AI Smart Score, analyst consensus, and 24-48h daily market updates ({lastUpdated})
           </span>
         </div>
-        <span className="watchlist-badge rec-buy">
-          🔍 {filteredStocks.length} Stocks Screened
-        </span>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            onClick={() => fetchLiveScreener(true)}
+            className="time-btn"
+            disabled={loading}
+            style={{ fontSize: "0.8rem", padding: "6px 12px", background: "rgba(59, 130, 246, 0.15)", borderColor: "rgba(59, 130, 246, 0.4)", color: "#60A5FA" }}
+          >
+            {loading ? "🔄 Syncing..." : "🔄 Daily Sync / Refresh"}
+          </button>
+          <span className="watchlist-badge rec-buy">
+            🔍 {filteredStocks.length} Stocks Screened
+          </span>
+        </div>
       </div>
 
       {/* Filter Toolbar */}

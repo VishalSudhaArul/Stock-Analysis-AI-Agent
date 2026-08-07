@@ -1,4 +1,4 @@
-import { analyzeInvestment, chatWithAnalyst } from "../services/investmentService.js";
+import { analyzeInvestment, chatWithAnalyst, getScreenerData } from "../services/investmentService.js";
 
 export async function analyze(req, res) {
   try {
@@ -50,6 +50,23 @@ export async function chat(req, res) {
     res.status(500).json({
       success: false,
       error: error.message || "Chat failed",
+    });
+  }
+}
+
+export async function getScreener(req, res) {
+  try {
+    const forceRefresh = req.query.refresh === "true";
+    const data = await getScreenerData(forceRefresh);
+    res.json({
+      success: true,
+      data: data,
+    });
+  } catch (error) {
+    console.error("Screener Controller Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fetch screener data",
     });
   }
 }

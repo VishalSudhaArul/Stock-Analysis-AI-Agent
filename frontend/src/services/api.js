@@ -64,6 +64,11 @@ export const chatWithAnalyst = async (message, history, companyName, stockData, 
   return response.data;
 };
 
+export const getScreenerApi = async (forceRefresh = false) => {
+  const response = await API.get(`/investment/screener${forceRefresh ? "?refresh=true" : ""}`);
+  return response.data;
+};
+
 // Reports API Calls
 export const saveReportApi = async (symbol, companyName, analysisData) => {
   const response = await API.post("/reports/save", {
